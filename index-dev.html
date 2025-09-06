@@ -1,0 +1,1685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Yarn Run</title>
+  <style>
+#totalCost,.controls{position:absolute;top:10px}body,html{margin:0;padding:0;height:100%;overflow:hidden}canvas{border:1px solid #000;display:block;min-width:800px;min-height:600px}.controls{left:10px;z-index:10}.controls button{margin-right:10px;padding:10px 20px;font-size:16px}.pill{background:#eee;padding:5px 10px;border-radius:20px;font-size:14px}.row{margin-bottom:8px}.muted{opacity:.7}#totalCost{right:10px;z-index:11;background:#111;color:#fff;padding:8px 14px;border-radius:999px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-weight:600;box-shadow:0 2px 6px rgba(0,0,0,.15)}#levelSelect{margin-left:8px}label.pill input{vertical-align:middle;margin-right:6px}#totalCost.over{background:#8b0000;color:#fff}#levelSelect option:disabled{color:#999}
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <div class="row">
+      <button id="bridgeButton">Bridge</button>
+      <button id="bouncyButton">Bouncy</button>
+      <button id="targetButton">Target</button>
+      <button id="timerButton">Timer</button>
+      <button id="deleteButton">Delete</button>
+	  <!-- Budget -->
+	<label class="pill" style="margin-left:8px;">
+	Budget £
+	<input id="budgetInput" type="number" min="0" step="10" value="0" style="width:90px; margin-left:6px;">
+	</label>
+      <span class="pill">Shift = lock H/V</span>
+      <select id="levelSelect" class="pill">
+        <option value="1">Level 1</option><option value="2">Level 2</option><option value="3">Level 3</option>
+        <option value="4">Level 4</option><option value="5">Level 5</option><option value="6">Level 6</option>
+        <option value="7">Level 7</option><option value="8">Level 8</option><option value="9">Level 9</option>
+        <option value="10">Level 10</option><option value="11">Level 11</option><option value="12">Level 12</option>
+        <option value="13">Level 13</option>
+      </select>
+      <!-- Admin toggle -->
+      <label class="pill" style="cursor:pointer;">
+        <input type="checkbox" id="adminToggle" checked> Admin
+      </label>
+    </div>
+    <div class="row">
+      <button id="playBtn">Play</button>
+      <button id="stopBtn" disabled>Stop</button>
+      <span class="pill muted">Play saves; Stop reloads</span>
+    </div>
+    <div class="row" id="bouncyRow" style="display:block">
+      <label for="bounceSlider">Bounciness</label>
+      <input type="range" id="bounceSlider" min="0" max="1.2" step="0.05" value="0.9"/>
+      <span id="bounceVal" class="pill">0.90</span>
+      &nbsp;&nbsp;
+      <label for="tensionSlider">Tension</label>
+      <input type="range" id="tensionSlider" min="0" max="2" step="0.1" value="0"/>
+      <span id="tensionVal" class="pill">0.0</span>
+    </div>
+    <div class="row" id="timerRow" style="display:none">
+      <label for="timerSlider">Timer (seconds)</label>
+      <input type="range" id="timerSlider" min="0.5" max="20" step="0.5" value="5"/>
+      <span id="timerVal" class="pill">5.0s</span>
+      <span class="pill muted">Click a joint to arm</span>
+    </div>
+    <div class="row">
+      <button id="saveBtn">Save</button>
+      <button id="loadBtn">Load</button>
+      <button id="clearBtn">Clear</button>
+    </div>
+  </div>
+  <div id="totalCost">Total: £0</div>
+  <canvas id="canvas"></canvas>
+  <script>
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+
+  // ==== Virtual world & viewport ====
+  const VIRT_W = 1600, VIRT_H = 900;
+  const MIN_SCREEN_W = 800, MIN_SCREEN_H = 600;
+  const view = { scale: 1, offX: 0, offY: 0 };
+  function newItemFromLevelFlag() { return !!isAdmin; }
+
+  function resizeCanvas(){
+    const screenW = Math.max(window.innerWidth, MIN_SCREEN_W);
+    const screenH = Math.max(window.innerHeight, MIN_SCREEN_H);
+    canvas.width = screenW; canvas.height = screenH;
+    const s = Math.min(screenW / VIRT_W, screenH / VIRT_H);
+    view.scale = s;
+    view.offX = Math.floor((screenW - VIRT_W * s) / 2);
+    view.offY = Math.floor((screenH - VIRT_H * s) / 2);
+  }
+  function setWorldTransform(){ ctx.setTransform(view.scale, 0, 0, view.scale, view.offX, view.offY); }
+  function resetTransform(){ ctx.setTransform(1,0,0,1,0,0); }
+  function screenToWorld(clientX, clientY){
+    const rect = canvas.getBoundingClientRect();
+    return { x:(clientX-rect.left-view.offX)/view.scale, y:(clientY-rect.top-view.offY)/view.scale };
+  }
+  resizeCanvas();
+  // ==== Tunables (world units) ====
+  const gravity = 0.5, friction = 0.99, ballFriction = 0.99, platformThickness = 10, endpointRadius = 7, maxSpeed = 50;
+  const MIN_PLATFORM_LEN = 50, SNAP_RADIUS = 15;
+  // ==== Target tunables ====
+  const DEFAULT_TARGET_RADIUS = 36, TARGET_REQUIRED_TIME = 3.0;
+  // ==== Cost model ====
+  const COST = { ball:50, platformBase:10, platformPerPx:0.10, bridgePerPx:0.08, bouncePerUnit:40, tensionPerUnit:50, timerPerSecond:5, target:100 };
+  // ==== State ====
+  let balls = [];
+  let platforms = [];
+  let targets = [];
+  let selectedPlatformType = 'bouncy';
+  let isCreatingPlatform = false;
+  let draggedPlatform = null;
+  let keys = { shift:false };
+  // ==== Budget ====
+  let levelBudget = 0;               // 0 = no budget cap
+  let levelCompleted = false;        // target met (win or over-budget fail)
+  let overBudgetOnWin = false;       // true if completion happened while over
+  // --- Fixed-step + substeps ---
+  const FIXED_DT = 1 / 120;   // 120 Hz simulation tick
+  const SUBSTEPS = 4;         // do 4 micro-steps per tick (effective 480 Hz)
+  let acc = 0, last = performance.now();
+  // ==== FX particles ====
+  const FX_MAX = 600;
+  const fx = []; // {x,y,vx,vy,life,ttl,size,alpha,spin,angle,type}
+  function rand(min, max){ return min + Math.random()*(max-min); }
+  function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+  // Endpoint edit state
+  let editing = { platform: null, which: null, startMx: 0, startMy: 0, moved: false, otherX:0, otherY:0 };
+  // Modes
+  let timerMode = false, timerSeconds = 5.0, deleteMode = false;
+  // Global controls
+  let timersRunning = false, isPlaying = false, levelBeaten = false;
+  // Level selector
+  const levelSelect = document.getElementById('levelSelect');
+  let currentLevel = Number(levelSelect?.value || 1);
+  // Admin toggle
+  const adminToggle = document.getElementById('adminToggle');
+  let isAdmin = adminToggle ? adminToggle.checked : true;
+  if (adminToggle) adminToggle.addEventListener('change', () => { isAdmin = adminToggle.checked; });
+	if (adminToggle){
+	  adminToggle.addEventListener('change', () => {
+		isAdmin = adminToggle.checked;
+		refreshLevelLocks();
+	  });
+	}
+
+  // Delta-time globals
+  let lastTs = performance.now(), dt = 1/60, scale = 1;
+  // Initial ball
+  balls.push({ x:100, y:100, radius:20, vx:0, vy:0, mass:1, isDragging:false, rotation:0, fromLevel:newItemFromLevelFlag() });
+  let mouse = { x:0, y:0, isDown:false, startX:0, startY:0 };
+  // ==== UI Hooks ====
+  const bridgeBtn = document.getElementById('bridgeButton');
+  const bouncyBtn = document.getElementById('bouncyButton');
+  const targetBtn = document.getElementById('targetButton');
+  const timerBtn  = document.getElementById('timerButton');
+  const deleteBtn = document.getElementById('deleteButton');
+  const bouncyRow = document.getElementById('bouncyRow');
+  const bounceSlider = document.getElementById('bounceSlider');
+  const bounceVal = document.getElementById('bounceVal');
+  const tensionSlider = document.getElementById('tensionSlider');
+  const tensionVal = document.getElementById('tensionVal');
+  const timerRow = document.getElementById('timerRow');
+  const timerSlider = document.getElementById('timerSlider');
+  const timerVal = document.getElementById('timerVal');
+  const saveBtn = document.getElementById('saveBtn');
+  const loadBtn = document.getElementById('loadBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const playBtn = document.getElementById('playBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const totalCostEl = document.getElementById('totalCost');
+  const budgetInput = document.getElementById('budgetInput');
+	if (budgetInput) {
+	  budgetInput.addEventListener('input', () => {
+		levelBudget = Math.max(0, Number(budgetInput.value) || 0);
+		updateTotalCost();
+	  });
+	}
+  bridgeBtn.onclick = ()=> setType('bridge');
+  bouncyBtn.onclick = ()=> setType('bouncy');
+  targetBtn.onclick = ()=> setType('target');
+  timerBtn.onclick  = ()=> toggleTimerMode();
+  deleteBtn.onclick = ()=> toggleDeleteMode();
+  saveBtn.onclick = ()=>{ saveLevel(currentLevel); updateTotalCost(); };
+  loadBtn.onclick = ()=>{ loadLevel(currentLevel); updateTotalCost(); };
+  clearBtn.onclick = () => {
+    if (isPlaying) return;
+
+    if (isAdmin) {
+      // Admin mode: full clear
+      platforms = [];
+      balls = [];
+      targets = [];
+    } else {
+      // Non-admin: remove ALL timers from anything that remains,
+      // then keep only locked (fromLevel) items.
+      for (const p of platforms) {
+        if (p.type === 'bridge') {
+          // Clear timers on every bridge joint
+          for (const pt of p.points) {
+            pt.timer = null;
+            pt.costTimer = null;
+          }
+        } else {
+          // Clear timers on bouncy endpoints
+          p.timerStart = null;
+          p.timerEnd = null;
+          p.timerStartCost = null;
+          p.timerEndCost = null;
+        }
+      }
+
+      // Now drop all user-added items; keep locked ones
+      balls     = balls.filter(b =>  b.fromLevel);
+      platforms = platforms.filter(p => p.fromLevel);
+      targets   = targets.filter(t =>  t.fromLevel);
+    }
+
+    updateTotalCost();
+  };
+  bounceSlider.oninput = ()=>{ bounceVal.textContent = Number(bounceSlider.value).toFixed(2); };
+  tensionSlider.oninput = ()=>{ tensionVal.textContent = Number(tensionSlider.value).toFixed(1); };
+  timerSlider.oninput  = ()=>{ timerSeconds = Number(timerSlider.value); timerVal.textContent = timerSeconds.toFixed(1) + 's'; };
+	playBtn.onclick = () => { if (isPlaying) return; saveLevel(currentLevel); setPlayingState(true); levelCompleted = false; overBudgetOnWin = false; resetTargetTimers?.(); };
+	stopBtn.onclick = () => { if (!isPlaying) return; loadLevel(currentLevel); setPlayingState(false); updateTotalCost(); };
+  levelSelect.addEventListener('change', () => { if (isPlaying) return; currentLevel = Number(levelSelect.value) || 1; loadLevel(currentLevel); setPlayingState(false); updateTotalCost?.(); });
+
+// ===== LEVELS =======
+// ==== Level completion gating ====
+const MAX_LEVELS = 13;
+function loadCompletedMap(){
+  try { return JSON.parse(localStorage.getItem('physicsCompleted') || '{}') || {}; }
+  catch { return {}; }
+}
+function saveCompletedMap(map){ localStorage.setItem('physicsCompleted', JSON.stringify(map)); }
+function isLevelCompleted(n){ const map = loadCompletedMap(); return !!map[n]; }
+function setLevelCompleted(n, val=true){
+  const map = loadCompletedMap();
+  if (val) map[n] = true; else delete map[n];
+  saveCompletedMap(map);
+}
+function highestSequentialCompleted(){
+  const map = loadCompletedMap();
+  let k = 0;
+  for (let i=1; i<=MAX_LEVELS; i++){
+    if (map[i]) k = i; else break; // stop at first gap
+  }
+  return k;
+}
+function refreshLevelLocks(){
+  const unlockedMax = isAdmin ? MAX_LEVELS : Math.min(MAX_LEVELS, highestSequentialCompleted() + 1);
+  const opts = levelSelect?.options || [];
+  for (let i = 0; i < opts.length; i++){
+    const lvl = Number(opts[i].value);
+    const locked = !isAdmin && lvl > unlockedMax;
+    opts[i].disabled = locked;
+    // Optional: decorate text
+    const baseText = `Level ${lvl}`;
+    opts[i].textContent = locked ? `${baseText} (locked)` : baseText;
+  }
+  // If current selection is locked (e.g., admin turned off), bump back to highest available
+  if (!isAdmin){
+    const currentLocked = Number(levelSelect.value) > unlockedMax;
+    if (currentLocked){
+      levelSelect.value = String(Math.max(1, unlockedMax));
+      currentLevel = Number(levelSelect.value);
+      loadLevel(currentLevel);
+    }
+  }
+}
+
+  function setPlayingState(on){
+	levelCompleted = false;
+	overBudgetOnWin = false;
+	if (budgetInput) budgetInput.disabled = on;
+    isPlaying = on; timersRunning = on;
+    playBtn.disabled = on;  stopBtn.disabled = !on;
+    [bridgeBtn,bouncyBtn,targetBtn,timerBtn,deleteBtn,saveBtn,loadBtn,clearBtn,levelSelect,adminToggle].forEach(b=>{ if (b) b.disabled = on; });
+    [bounceSlider,tensionSlider,timerSlider].forEach(s=>{ if (s) s.disabled = on; });
+    if (on){ bouncyRow.style.display = 'none'; timerRow.style.display = 'none'; highlightSelectedButton('playBtn'); }
+    else { highlightSelectedButton(selectedPlatformType+'Button'); bouncyRow.style.display = (selectedPlatformType==='bouncy') ? 'block' : 'none'; if (timerMode) timerRow.style.display = 'block'; }
+
+	if (!on) refreshLevelLocks();
+  }
+
+  function setType(t){ if (isPlaying) return; selectedPlatformType = t; timerMode=false; deleteMode=false; highlightSelectedButton(t+'Button'); bouncyRow.style.display = (t==='bouncy')?'block':'none'; timerRow.style.display='none'; }
+  function toggleTimerMode(){ if (isPlaying) return; deleteMode=false; timerMode=!timerMode; if (timerMode){ highlightSelectedButton('timerButton'); bouncyRow.style.display='none'; timerRow.style.display='block'; } else { highlightSelectedButton(selectedPlatformType+'Button'); timerRow.style.display='none'; bouncyRow.style.display=(selectedPlatformType==='bouncy')?'block':'none'; } }
+  function toggleDeleteMode(){ if (isPlaying) return; timerMode=false; deleteMode=!deleteMode; if (deleteMode){ highlightSelectedButton('deleteButton'); bouncyRow.style.display='none'; timerRow.style.display='none'; } else { highlightSelectedButton(selectedPlatformType+'Button'); bouncyRow.style.display=(selectedPlatformType==='bouncy')?'block':'none'; } }
+  function highlightSelectedButton(id){ document.querySelectorAll('.controls .row:first-child button, #timerRow button').forEach(b=>b.style.backgroundColor=''); const el=document.getElementById(id); if(el) el.style.backgroundColor='#ccc'; }
+  highlightSelectedButton('bouncyButton');
+
+  // ==== Helpers for editing ====
+  function setPlatformFromEndpoints(p, sx, sy, ex, ey){
+    const a = Math.atan2(ey - sy, ex - sx);
+    const len = clamp(Math.hypot(ex - sx, ey - sy), MIN_PLATFORM_LEN, 300);
+    Object.assign(p, {
+      x: sx, y: sy, length: len, angle: a,
+      endX: sx + len*Math.cos(a), endY: sy + len*Math.sin(a),
+      costLength: len
+    });
+  }
+
+  // ==== Events ====
+  window.addEventListener('keydown', (e)=>{ if (e.key==='Shift') keys.shift=true; });
+  window.addEventListener('keyup',   (e)=>{ if (e.key==='Shift') keys.shift=false; });
+
+  function toggleAnchor(p, which){
+    if (!isAdmin && p?.fromLevel) return; // guard
+    if (which==='start'){ p.isFixedStart = !p.isFixedStart; if (!p.isFixedStart) triggerTensionRelease(p); }
+    else { p.isFixedEnd = !p.isFixedEnd; if (!p.isFixedEnd) triggerTensionRelease(p); }
+    updateTotalCost();
+  }
+
+  canvas.addEventListener('mousedown', (e)=>{
+    if (e.button !== 0) return;
+    const {x:mx, y:my} = screenToWorld(e.clientX, e.clientY);
+    mouse.x = mx; mouse.y = my;
+    if (isPlaying){
+      for (const ball of balls){
+        if (Math.hypot(mouse.x-ball.x, mouse.y-ball.y) < ball.radius){
+          if (ball.fromLevel && !isAdmin) continue; // can't drag preloaded balls
+          ball.isDragging=true; ball.vx=0; ball.vy=0; return;
+        }
+      }
+      return;
+    }
+    // Place target
+    if (!timerMode && !deleteMode && selectedPlatformType === 'target'){
+      targets.push({ x: mouse.x, y: mouse.y, radius: DEFAULT_TARGET_RADIUS, insideAccum: 0, required: TARGET_REQUIRED_TIME, fromLevel:newItemFromLevelFlag()});
+      updateTotalCost(); return;
+    }
+    if (deleteMode){ if (tryDeleteAt(mouse.x, mouse.y)) updateTotalCost(); return; }
+    let draggingBall = false;
+    for (const ball of balls){
+      if (Math.hypot(mouse.x-ball.x, mouse.y-ball.y) < ball.radius){
+        if (ball.fromLevel && !isAdmin) { draggingBall = false; /* blocked */ } else { ball.isDragging=true; ball.vx=0; ball.vy=0; draggingBall=true; }
+        break;
+      }
+    }
+    if (draggingBall) return;
+
+    if (timerMode){ if (tryArmTimerAt(mouse.x, mouse.y, timerSeconds)) updateTotalCost(); return; }
+
+    // Split bridges by clicking a mid joint
+    for (let i = platforms.length-1; i >= 0; i--){
+      const p = platforms[i]; if (!p || p.type !== 'bridge') continue;
+      if (p.fromLevel && !isAdmin) continue; // guard
+      for (let k = 1; k < p.points.length-1; k++){
+        const pt = p.points[k];
+        if (Math.hypot(mouse.x-pt.x, mouse.y-pt.y) < endpointRadius){
+          const left = p.points.slice(0, k);
+          const right = p.points.slice(k+1);
+          if (left.length >= 2){ left[0].isFixed = true; left[left.length-1].isFixed = false; platforms.push({ type:'bridge', points:left, segmentLength:p.segmentLength, costLength: p.segmentLength*(left.length-1), fromLevel:p.fromLevel || isAdmin }); }
+          if (right.length >= 2){ right[0].isFixed = false; right[right.length-1].isFixed = true; platforms.push({ type:'bridge', points:right, segmentLength:p.segmentLength, costLength: p.segmentLength*(right.length-1), fromLevel:p.fromLevel || isAdmin }); }
+          platforms.splice(i,1); updateTotalCost(); return;
+        }
+      }
+    }
+
+    // Endpoint edit or toggle-on-click
+    for (const pl of platforms){
+      if (pl.type === 'bridge') continue;
+      const sx = pl.x, sy = pl.y;
+      const ex = pl.x + pl.length*Math.cos(pl.angle);
+      const ey = pl.y + pl.length*Math.sin(pl.angle);
+      const nearStart = Math.hypot(mouse.x - sx, mouse.y - sy) < endpointRadius;
+      const nearEnd   = Math.hypot(mouse.x - ex, mouse.y - ey) < endpointRadius;
+
+      if (nearStart || nearEnd){
+        if (pl.fromLevel && !isAdmin) continue; // guard
+        editing.platform = pl;
+        editing.which = nearStart ? 'start' : 'end';
+        editing.startMx = mouse.x; editing.startMy = mouse.y;
+        editing.moved = false;
+        if (nearStart){ editing.otherX = ex; editing.otherY = ey; }
+        else { editing.otherX = sx; editing.otherY = sy; }
+        return;
+      }
+    }
+
+    // Drag platform body
+    platforms.forEach(pl=>{
+      if (pl.type === 'bridge') return;
+      if (pl.fromLevel && !isAdmin) return; // guard
+      const sx = pl.x, sy = pl.y; const ex = pl.x + pl.length*Math.cos(pl.angle), ey = pl.y + pl.length*Math.sin(pl.angle);
+      const interactionMargin = 20;
+      const distToLine = pointToLineDistance(mouse.x, mouse.y, sx, sy, ex, ey);
+      const proj = projectPointOntoLine(mouse.x, mouse.y, sx, sy, ex, ey);
+      const along = Math.hypot(proj.x - sx, proj.y - sy);
+      if (distToLine < pl.thickness/2 && along > interactionMargin && along < pl.length - interactionMargin){ draggedPlatform = pl; mouse.startX = mouse.x - pl.x; mouse.startY = mouse.y - pl.y; }
+    });
+
+    if (!draggedPlatform){ mouse.isDown = true; mouse.startX = mouse.x; mouse.startY = mouse.y; isCreatingPlatform = true; }
+  });
+
+  canvas.addEventListener('mousemove', (e)=>{
+    const {x:mx, y:my} = screenToWorld(e.clientX, e.clientY);
+    mouse.x = mx; mouse.y = my;
+
+    balls.forEach(b=>{ if (b.isDragging){ b.x = mouse.x; b.y = mouse.y; } });
+    if (draggedPlatform){ draggedPlatform.x = mouse.x - mouse.startX; draggedPlatform.y = mouse.y - mouse.startY; }
+
+    // Live endpoint editing
+    if (editing.platform){
+      const p = editing.platform;
+      if (!editing.moved && (Math.hypot(mouse.x - editing.startMx, mouse.y - editing.startMy) > 3)) editing.moved = true;
+
+      let mxw = mouse.x, myw = mouse.y;
+      const dx = mxw - editing.otherX, dy = myw - editing.otherY;
+      if (keys.shift){ if (Math.abs(dx) >= Math.abs(dy)) { myw = editing.otherY; } else { mxw = editing.otherX; } }
+      const snap = findNearestFixedPoint(mxw, myw, SNAP_RADIUS);
+      if (snap){ mxw = snap.x; myw = snap.y; }
+
+      if (editing.which === 'start'){ setPlatformFromEndpoints(p, mxw, myw, editing.otherX, editing.otherY); }
+      else { setPlatformFromEndpoints(p, editing.otherX, editing.otherY, mxw, myw); }
+
+      updateTotalCost();
+    }
+  });
+
+  canvas.addEventListener('mouseup', (e)=>{
+    if (e.button !== 0) return;
+
+    // Finish endpoint editing (or toggle on click)
+    if (editing.platform){
+      const p = editing.platform, which = editing.which, wasDrag = editing.moved;
+      editing.platform = null; editing.which = null; editing.moved = false;
+      if (!wasDrag){ toggleAnchor(p, which); }
+      updateTotalCost();
+      return;
+    }
+
+    balls.forEach(b=>b.isDragging=false); draggedPlatform=null;
+    if (isPlaying) return;
+
+    if (isCreatingPlatform){
+      const startSnap = findNearestFixedPoint(mouse.startX, mouse.startY, SNAP_RADIUS);
+      const sx = startSnap ? startSnap.x : mouse.startX;
+      const sy = startSnap ? startSnap.y : mouse.startY;
+
+      let ex = mouse.x, ey = mouse.y;
+      let dx = ex - sx, dy = ey - sy;
+      if (keys.shift){ if (Math.abs(dx) >= Math.abs(dy)) { dy = 0; ey = sy; } else { dx = 0; ex = sx; } }
+
+      const endSnap = findNearestFixedPoint(ex, ey, SNAP_RADIUS);
+      if (endSnap){ ex = endSnap.x; ey = endSnap.y; }
+
+      let length = Math.hypot(ex - sx, ey - sy);
+      const angle = Math.atan2(ey - sy, ex - sx);
+
+      if (selectedPlatformType === 'bridge'){
+        if (length > 300) length = 300;
+        const numPoints = Math.max(6, Math.ceil(length / 20));
+        const seg = length / (numPoints - 1);
+        const pts = [];
+        for (let i=0;i<numPoints;i++){
+          const x = sx + i*seg*Math.cos(angle);
+          const y = sy + i*seg*Math.sin(angle);
+          pts.push({ x, y, vx:0, vy:0, isFixed: (i===0 || i===numPoints-1), timer: null, costTimer: null });
+        }
+        platforms.push({ type:'bridge', points: pts, segmentLength: seg, costLength: length, fromLevel:newItemFromLevelFlag() });
+      } else if (selectedPlatformType === 'bouncy') {
+        if (length < MIN_PLATFORM_LEN){ isCreatingPlatform=false; mouse.isDown=false; return; }
+        if (length > 300) length = 300;
+        const p = {
+          type:'bouncy', x:sx, y:sy, length, angle, thickness:platformThickness,
+          bounce:Number(bounceSlider.value), tension:Number(tensionSlider.value)||0,
+          isFixedStart:true, isFixedEnd:true, angularVelocity:0,
+          endX: sx + length*Math.cos(angle), endY: sy + length*Math.sin(angle),
+          timerStart:null, timerEnd:null, timerStartCost:null, timerEndCost:null,
+          costLength:length, releasing:false, targetLength:null, releaseSpeed:0, expansionRateFE:0,
+          fromLevel:newItemFromLevelFlag()
+        };
+        platforms.push(p);
+      }
+      isCreatingPlatform=false;
+      updateTotalCost();
+    }
+    mouse.isDown=false;
+  });
+
+  canvas.addEventListener('contextmenu', (e)=>{
+    e.preventDefault(); if (isPlaying) return;
+    const {x, y} = screenToWorld(e.clientX, e.clientY);
+    balls.push({ x, y, radius:20, vx:0, vy:0, mass:1, isDragging:false, rotation:0, fromLevel:newItemFromLevelFlag() });
+    updateTotalCost();
+  });
+
+  // ==== Deletion helper ====
+  function tryDeleteAt(mx, my){
+    // Balls
+    for (let i = balls.length-1; i >= 0; i--){
+      const b = balls[i];
+      if (Math.hypot(mx - b.x, my - b.y) <= b.radius){
+        if (b.fromLevel && !isAdmin) continue;
+        balls.splice(i,1); return true;
+      }
+    }
+    // Targets
+    for (let i = targets.length-1; i >= 0; i--){
+      const t = targets[i];
+      if (Math.hypot(mx - t.x, my - t.y) <= t.radius){
+        if (t.fromLevel && !isAdmin) continue;
+        targets.splice(i,1); return true;
+      }
+    }
+    // Platforms/bridges
+    for (let i = platforms.length-1; i >= 0; i--){
+      const p = platforms[i];
+      if (p.fromLevel && !isAdmin) continue;
+      if (p.type === 'bridge'){
+        for (let k=0;k<p.points.length;k++){
+          const pt = p.points[k];
+          if (Math.hypot(mx-pt.x, my-pt.y) < endpointRadius){ platforms.splice(i,1); return true; }
+        }
+        for (let k=0;k<p.points.length-1;k++){
+          const A=p.points[k], B=p.points[k+1];
+          const c = closestPointOnSegment(mx,my,A.x,A.y,B.x,B.y);
+          const d = Math.hypot(mx-c.x, my-c.y);
+          if (d < platformThickness/2){ platforms.splice(i,1); return true; }
+        }
+      } else {
+        const sx = p.x, sy = p.y;
+        const ex = p.x + p.length*Math.cos(p.angle);
+        const ey = p.y + p.length*Math.sin(p.angle);
+        if (Math.hypot(mx - sx, my - sy) < endpointRadius || Math.hypot(mx - ex, my - ey) < endpointRadius){ platforms.splice(i,1); return true; }
+        const distToLine = pointToLineDistance(mx,my,sx,sy,ex,ey);
+        const proj = projectPointOntoLine(mx,my,sx,sy,ex,ey);
+        const along = Math.hypot(proj.x - sx, proj.y - sy);
+        if (distToLine < p.thickness/2 && along > 0 && along < p.length){ platforms.splice(i,1); return true; }
+      }
+    }
+    return false;
+  }
+
+  // ==== Timer helpers ====
+  function tryArmTimerAt(mx, my, seconds){
+    for (const pl of platforms){
+      if (pl.type !== 'bridge'){
+      //  if (pl.fromLevel && !isAdmin) continue; // guard
+        const sx = pl.x, sy = pl.y;
+        const ex = pl.x + pl.length*Math.cos(pl.angle);
+        const ey = pl.y + pl.length*Math.sin(pl.angle);
+        if (Math.hypot(mx - sx, my - sy) < endpointRadius && pl.isFixedStart){ pl.timerStart = seconds; pl.timerStartCost = seconds; return true; }
+        if (Math.hypot(mx - ex, my - ey) < endpointRadius && pl.isFixedEnd){ pl.timerEnd = seconds; pl.timerEndCost = seconds; return true; }
+      }
+    }
+    for (const b of platforms){
+      if (b.type !== 'bridge') continue;
+      //if (b.fromLevel && !isAdmin) continue; // guard
+      for (let i=0;i<b.points.length;i++){
+        const pt = b.points[i];
+        if (Math.hypot(mx - pt.x, my - pt.y) < endpointRadius){ pt.timer = seconds; pt.costTimer = seconds; return true; }
+      }
+    }
+    return false;
+  }
+
+  function triggerTensionRelease(p){
+    if (!p || p.type==='bridge' || p.releasing) return;
+    if ((p.tension||0) <= 0) return;
+    p.releasing = true;
+    p.targetLength = p.length * (1 + Math.min(2, Math.max(0, p.tension)));
+    p.releaseSpeed = 150 * (p.tension||0);
+  }
+
+  // ==== Fixed point helpers (for snapping) ====
+  function findNearestFixedPoint(x, y, radius){
+  let best = null, bestD = radius + 1;
+  for (const p of platforms){
+    if (p.type === 'bridge'){
+      for (const pt of p.points) if (pt.isFixed){
+        const d = Math.hypot(x - pt.x, y - pt.y);
+        if (d <= radius && d < bestD) bestD = d, best = pt;
+      }
+    } else {
+      const sx=p.x, sy=p.y, ex=p.x+p.length*Math.cos(p.angle), ey=p.y+p.length*Math.sin(p.angle);
+      if (p.isFixedStart){
+        const d = Math.hypot(x - sx, y - sy);
+        if (d <= radius && d < bestD) bestD = d, best = {x:sx,y:sy};
+      }
+      if (p.isFixedEnd){
+        const d = Math.hypot(x - ex, y - ey);
+        if (d <= radius && d < bestD) bestD = d, best = {x:ex,y:ey};
+      }
+    }
+  }
+  return best;
+}
+
+  // ==== Draw ====
+  function bounceToColor(b){ const max = 1.2; const t = Math.max(0, Math.min(1, b / max)); const r = Math.round(255 * t); return `rgb(${r},0,0)`; }
+  function tensionToColor(t){ const max = 2.0; const a = Math.max(0, Math.min(1, t / max)); return `rgba(255,165,0,${0.15 + 0.85*a})`; }
+
+  function drawLockAt(x,y){
+    if (isAdmin) return;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(x-6, y-4, 12, 8); ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y-4, 6, Math.PI, 0); ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.restore();
+  }
+
+  // function drawBalls(){
+  //   balls.forEach(ball=>{
+  //     ctx.save(); ctx.translate(ball.x, ball.y); ctx.rotate(ball.rotation);
+  //     ctx.beginPath(); ctx.arc(0,0,ball.radius, Math.PI/2, -Math.PI/2, true); ctx.lineTo(0,0); ctx.closePath(); ctx.fillStyle='green'; ctx.fill();
+  //     ctx.beginPath(); ctx.arc(0,0,ball.radius, -Math.PI/2, Math.PI/2, true); ctx.lineTo(0,0); ctx.closePath(); ctx.fillStyle='blue'; ctx.fill();
+  //     ctx.restore();
+  //     if (ball.fromLevel && !isAdmin) drawLockAt(ball.x, ball.y - ball.radius - 10);
+  //   });
+  // }
+
+  function drawBalls(){
+    for (const ball of balls){
+      // pick a hue per ball (optional)
+      //if (!ball.yarnHue) {
+        // stash a stable hue so each ball has its own color
+        //ball.yarnHue = 10 + ((ball.x + ball.y) % 40); // 10..50 range
+      //}
+      drawYarnBall(ball, { hue: ball.yarnHue });
+    }
+  }
+
+  function drawTargets(){
+    targets.forEach(t=>{
+      // base circle
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, t.radius, 0, Math.PI*2);
+      ctx.fillStyle = t.done ? 'rgba(0,200,0,0.18)' : 'rgba(0,120,255,0.18)'; // greenish if done
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = t.done ? '#2fa84a' : '#2e7bdc';
+      ctx.stroke();
+
+      // progress ring only while playing + not done + not already finished level
+      if (isPlaying && !levelCompleted && !t.done){
+        const p = Math.max(0, Math.min(1, (t.insideAccum||0) / (t.required||TARGET_REQUIRED_TIME)));
+        if (p > 0){
+          ctx.beginPath();
+          ctx.lineWidth = 4;
+          ctx.strokeStyle = t.done ? '#2fa84a' : '#1a5fb4';
+          ctx.arc(t.x, t.y, t.radius + 6, -Math.PI/2, -Math.PI/2 + p*2*Math.PI);
+          ctx.stroke();
+        }
+      }
+
+      // small check when done (optional, looks nice)
+      if (t.done){
+        ctx.save();
+        ctx.strokeStyle = '#2fa84a';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(t.x - 8, t.y + 2);
+        ctx.lineTo(t.x - 2, t.y + 8);
+        ctx.lineTo(t.x + 10, t.y - 6);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      if (t.fromLevel && !isAdmin) drawLockAt(t.x, t.y - t.radius - 8);
+    });
+  }
+
+
+  function drawPlatforms(){
+    platforms.forEach(p=>{
+      if (p.type === 'bridge'){ drawBridgePlatform(p); return; }
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.angle);
+      ctx.fillStyle = bounceToColor(p.bounce||0);
+      ctx.fillRect(0, -p.thickness/2, p.length, p.thickness);
+      if ((p.tension||0) > 0){ ctx.lineWidth = 3; ctx.strokeStyle = tensionToColor(p.tension||0); ctx.strokeRect(0, -p.thickness/2, p.length, p.thickness); }
+      const label = (p.bounce||0).toFixed(2);
+      const needFlip = Math.cos(p.angle) < 0;
+      ctx.save(); ctx.font = '12px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.translate(p.length/2, 0); if (needFlip) ctx.rotate(Math.PI);
+      ctx.lineWidth = 3; ctx.strokeStyle = 'black'; ctx.strokeText(label, 0, 0);
+      ctx.fillStyle = 'white'; ctx.fillText(label, 0, 0);
+      ctx.restore();
+      drawEndpoint(0, 0, p.isFixedStart, p.timerStart);
+      drawEndpoint(p.length, 0, p.isFixedEnd, p.timerEnd);
+      ctx.restore();
+      if (p.fromLevel && !isAdmin){
+        const cx = p.x + (p.length/2)*Math.cos(p.angle);
+        const cy = p.y + (p.length/2)*Math.sin(p.angle);
+        drawLockAt(cx, cy - 14);
+      }
+    });
+  }
+
+  function drawEndpoint(x, y, isFixed, timer){
+    ctx.beginPath(); ctx.arc(x, y, endpointRadius, 0, Math.PI*2);
+    ctx.fillStyle = isFixed ? 'blue' : 'green'; ctx.fill(); ctx.closePath();
+    if (timer && timer > 0){
+      ctx.beginPath(); ctx.arc(x, y, endpointRadius+3, 0, Math.PI*2); ctx.strokeStyle = 'orange'; ctx.lineWidth = 2; ctx.stroke();
+      ctx.font = '10px Arial'; ctx.fillStyle = 'orange'; ctx.textAlign='center'; ctx.textBaseline='top';
+      ctx.fillText(timer.toFixed(1), x, y + endpointRadius + 4);
+    }
+  }
+
+  function drawBridgePlatform(b){
+    ctx.beginPath(); b.points.forEach((pt,i)=>{ if (i===0) ctx.moveTo(pt.x, pt.y); else ctx.lineTo(pt.x, pt.y); });
+    ctx.strokeStyle='#444'; ctx.lineWidth=platformThickness; ctx.lineCap='butt'; ctx.stroke();
+    b.points.forEach((pt,i)=>{
+      ctx.beginPath(); ctx.arc(pt.x, pt.y, endpointRadius, 0, Math.PI*2);
+      const isEndpoint = (i===0 || i===b.points.length-1);
+      ctx.fillStyle = isEndpoint ? 'blue' : 'pink'; ctx.fill(); ctx.closePath();
+      if (pt.timer && pt.timer > 0){
+        ctx.beginPath(); ctx.arc(pt.x, pt.y, endpointRadius+3, 0, Math.PI*2); ctx.strokeStyle = 'orange'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.font = '10px Arial'; ctx.fillStyle = 'orange'; ctx.textAlign='center'; ctx.textBaseline='top';
+        ctx.fillText(pt.timer.toFixed(1), pt.x, pt.y + endpointRadius + 4);
+      }
+    });
+    if (b.fromLevel && !isAdmin){
+      const mid = Math.floor(b.points.length/2);
+      drawLockAt(b.points[mid].x, b.points[mid].y - 18);
+    }
+  }
+
+  function drawPlatformPreview(){
+    if (!isCreatingPlatform || timerMode || deleteMode || isPlaying) return;
+    const startSnap = findNearestFixedPoint(mouse.startX, mouse.startY, SNAP_RADIUS);
+    const sx = startSnap ? startSnap.x : mouse.startX;
+    const sy = startSnap ? startSnap.y : mouse.startY;
+    let ex = mouse.x, ey = mouse.y;
+    let dx = ex - sx, dy = ey - sy;
+    if (keys.shift){ if (Math.abs(dx) >= Math.abs(dy)) { dy = 0; ey = sy; } else { dx = 0; ex = sx; } }
+    const endSnap = findNearestFixedPoint(ex, ey, SNAP_RADIUS);
+    if (endSnap){ ex = endSnap.x; ey = endSnap.y; }
+    let length = Math.hypot(ex - sx, ey - sy), angle = Math.atan2(ey - sy, ex - sx);
+    if (selectedPlatformType === 'bridge'){
+      if (length > 300) length = 300;
+      const maxSeg = 60; const n = Math.ceil(length / maxSeg); const seg = length / n;
+      for (let i=0;i<n;i++){
+        const sxx = sx + i*seg*Math.cos(angle); const syy = sy + i*seg*Math.sin(angle);
+        const exx = sxx + seg*Math.cos(angle); const eyy = syy + seg*Math.sin(angle);
+        ctx.beginPath(); ctx.moveTo(sxx, syy); ctx.lineTo(exx, eyy); ctx.strokeStyle='gray'; ctx.lineWidth=platformThickness; ctx.stroke();
+        if (i===0){ drawEndpoint(sxx, syy, true); } else { ctx.beginPath(); ctx.arc(sxx, syy, endpointRadius, 0, Math.PI*2); ctx.fillStyle='pink'; ctx.fill(); ctx.closePath(); }
+        if (i===n-1){ drawEndpoint(exx, eyy, true); } else { ctx.beginPath(); ctx.arc(exx, eyy, endpointRadius, 0, Math.PI*2); ctx.fillStyle='pink'; ctx.fill(); ctx.closePath(); }
+      }
+    } else if (selectedPlatformType === 'bouncy') {
+      if (length > 300) length = 300;
+      const exx = sx + length*Math.cos(angle), eyy = sy + length*Math.sin(angle);
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(exx, eyy); ctx.strokeStyle='gray'; ctx.lineWidth=platformThickness; ctx.stroke();
+      drawEndpoint(sx, sy, true);
+      drawEndpoint(exx, eyy, true);
+    }
+    ctx.save(); ctx.lineWidth = 2; ctx.strokeStyle = 'gold';
+    if (startSnap){ ctx.beginPath(); ctx.arc(sx, sy, endpointRadius+5, 0, Math.PI*2); ctx.stroke(); }
+    if (endSnap){ ctx.beginPath(); ctx.arc(ex, ey, endpointRadius+5, 0, Math.PI*2); ctx.stroke(); }
+    ctx.restore();
+    ctx.font = '12px Arial'; ctx.textAlign='left'; ctx.textBaseline='bottom';
+    ctx.fillStyle = (length < MIN_PLATFORM_LEN && selectedPlatformType === 'bouncy') ? 'red' : 'green';
+    ctx.fillText(`${Math.round(length)} px`, mouse.x + 10, mouse.y - 10);
+  }
+
+  function drawTargetPreview(){
+    if (isPlaying || timerMode || deleteMode) return;
+    if (selectedPlatformType !== 'target') return;
+    ctx.beginPath(); ctx.arc(mouse.x, mouse.y, DEFAULT_TARGET_RADIUS, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(0,120,255,0.12)'; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = '#2e7bdc'; ctx.setLineDash([6,6]); ctx.stroke(); ctx.setLineDash([]);
+  }
+
+function drawWinOverlay(){
+  if (!levelCompleted) return;
+
+  resetTransform();
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const headline = overBudgetOnWin ? 'OVER BUDGET' : 'LEVEL BEATEN!';
+  const sub = overBudgetOnWin
+    ? 'Press Stop to edit and try again'
+    : 'Press Stop to reset / edit';
+
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 48px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(headline, canvas.width/2, canvas.height/2);
+
+  ctx.font = '20px Arial';
+  ctx.fillText(sub, canvas.width/2, canvas.height/2 + 48);
+  ctx.restore();
+
+  setWorldTransform();
+}
+
+
+  // ==== Physics / updates ====
+  function updateBalls(){
+    balls.forEach(ball=>{
+      if (ball.isDragging) return;
+      ball.vy += gravity * scale; ball.x  += ball.vx * scale; ball.y  += ball.vy * scale;
+      const speed = Math.hypot(ball.vx, ball.vy); if (speed > maxSpeed){ const s=maxSpeed/speed; ball.vx*=s; ball.vy*=s; }
+      const f = Math.pow(friction, scale); ball.vx *= f; ball.vy *= f;
+      const linearSpeed = Math.hypot(ball.vx, ball.vy); const dir = Math.sign(ball.vx)||1; ball.rotation += (linearSpeed/ball.radius)*dir * scale;
+
+      if (ball.y + ball.radius > VIRT_H){ ball.y = VIRT_H - ball.radius; ball.vy *= -0.7; }
+      if (ball.x + ball.radius > VIRT_W){ ball.x = VIRT_W - ball.radius; ball.vx *= -0.7; }
+      if (ball.x - ball.radius < 0){ ball.x = ball.radius; ball.vx *= -0.7; }
+      if (ball.y - ball.radius < 0){ ball.y = ball.radius; ball.vy *= -0.7; }
+
+      platforms.forEach(p=>{ if (platformCollision(ball,p)) resolveBallVsPlatform(ball,p); });
+    });
+  }
+
+  function updatePlatforms(){
+    for (const p of platforms){ if (p.type !== 'bridge'){ p.prevAngle = p.angle; p.prevX = p.x; p.prevY = p.y; p.prevLen = p.length; } }
+
+    for (let i=0; i<platforms.length; i++){
+      const p = platforms[i];
+      if (p.type === 'bridge'){
+        let didSplit = false;
+        for (let k=0; k<p.points.length; k++){
+          const pt = p.points[k];
+          if (pt.timer && pt.timer > 0){
+            if (timersRunning) pt.timer -= dt;
+            if (pt.timer <= 0){
+              pt.timer = null;
+              const isEndpoint=(k===0||k===p.points.length-1);
+              if (isEndpoint){ pt.isFixed=false; }
+              else {
+                const left=p.points.slice(0,k);
+                const right=p.points.slice(k+1);
+                if (left.length>=2){ left[0].isFixed=true; left[left.length-1].isFixed=false; platforms.push({type:'bridge', points:left, segmentLength:p.segmentLength, costLength: p.segmentLength*(left.length-1), fromLevel:p.fromLevel || isAdmin}); }
+                if (right.length>=2){ right[0].isFixed=false; right[right.length-1].isFixed=true; platforms.push({type:'bridge', points:right, segmentLength:p.segmentLength, costLength: p.segmentLength*(right.length-1), fromLevel:p.fromLevel || isAdmin}); }
+                platforms.splice(i,1); didSplit=true;
+                // small pop at the split joint
+                emitImpactSparks(p.points[k].x, p.points[k].y, 0, -1, 0.5);
+              }
+            }
+          }
+          if (didSplit) break;
+        }
+        if (didSplit){ i--; continue; }
+        updateBridgePlatform(p);
+        continue;
+      }
+
+      if (p.timerStart && p.timerStart > 0){ if (timersRunning) p.timerStart -= dt; if (p.timerStart <= 0){ p.timerStart = null; p.isFixedStart = false; triggerTensionRelease(p); } }
+      if (p.timerEnd && p.timerEnd > 0){ if (timersRunning) p.timerEnd -= dt; if (p.timerEnd <= 0){ p.timerEnd = null; p.isFixedEnd   = false; triggerTensionRelease(p); } }
+
+      p.expansionRateFE = 0;
+      if (p.releasing){
+        const oldLen = p.length;
+        p.length += p.releaseSpeed * dt;
+        if (p.length >= p.targetLength){ p.length = p.targetLength; p.releasing = false; }
+        if (p.isFixedStart && !p.isFixedEnd){ p.endX = p.x + p.length*Math.cos(p.angle); p.endY = p.y + p.length*Math.sin(p.angle); }
+        else if (!p.isFixedStart && p.isFixedEnd){ p.x = p.endX - p.length*Math.cos(p.angle); p.y = p.endY - p.length*Math.sin(p.angle); }
+        else { p.endX = p.x + p.length*Math.cos(p.angle); p.endY = p.y + p.length*Math.sin(p.angle); }
+        p.releaseSpeed = 10 * (p.tension||0) * 60;
+      }
+
+      if (!p.isFixedStart && !p.isFixedEnd){
+        p.y += (p.vy||0) * scale; p.x += (p.vx||0) * scale; p.vy = p.vy||0; p.vy += gravity * scale; continue;
+      }
+      const damping=0.95, gEff=0.005;
+      const dmp = Math.pow(damping, scale);
+      const torque = Math.cos(p.angle) * gEff * scale;
+      p.angularVelocity = p.angularVelocity || 0;
+      if (p.isFixedStart && !p.isFixedEnd){ p.angularVelocity += torque; p.angularVelocity *= dmp; p.angle += p.angularVelocity * scale; p.endX = p.x + p.length*Math.cos(p.angle); p.endY = p.y + p.length*Math.sin(p.angle); }
+      else if (!p.isFixedStart && p.isFixedEnd){ p.angularVelocity += torque; p.angularVelocity *= dmp; p.angle -= p.angularVelocity * scale; p.x = p.endX - p.length*Math.cos(p.angle); p.y = p.endY - p.length*Math.sin(p.angle); }
+    }
+
+    // Capsule-capsule collisions
+    for (let i=0;i<platforms.length;i++){
+      const a = platforms[i]; if (a.type==='bridge') continue;
+      for (let j=i+1;j<platforms.length;j++){
+        const b = platforms[j]; if (b.type==='bridge') continue;
+        const hit = capsuleHit(a,b);
+        if (!hit) continue;
+        const {overlap, nx, ny} = hit;
+        const aOneFixed = !!a.isFixedStart ^ !!a.isFixedEnd;
+        const bOneFixed = !!b.isFixedStart ^ !!b.isFixedEnd;
+        if (aOneFixed && !bOneFixed){ a.angle = a.prevAngle; a.angularVelocity = 0; a.x = a.prevX; a.y = a.prevY; a.length = a.prevLen; a.endX = a.x + a.length*Math.cos(a.angle); a.endY = a.y + a.length*Math.sin(a.angle); }
+        else if (!aOneFixed && bOneFixed){ b.angle = b.prevAngle; b.angularVelocity = 0; b.x = b.prevX; b.y = b.prevY; b.length = b.prevLen; b.endX = b.x + b.length*Math.cos(b.angle); b.endY = b.y + b.length*Math.sin(b.angle); }
+        else if (aOneFixed && bOneFixed){ a.angle = a.prevAngle; a.angularVelocity = 0; a.x = a.prevX; a.y = a.prevY; a.length = a.prevLen; a.endX = a.x + a.length*Math.cos(a.angle); a.endY = a.y + a.length*Math.sin(a.angle); b.angle = b.prevAngle; b.angularVelocity = 0; b.x = b.prevX; b.y = b.prevY; b.length = b.prevLen; b.endX = b.x + b.length*Math.cos(b.angle); b.endY = b.y + b.length*Math.sin(b.angle); }
+        else {
+          const push = overlap / 2;
+          a.x -= nx * push; a.y -= ny * push; a.endX -= nx * push; a.endY -= ny * push; a.vx = a.vy = 0; a.angularVelocity = 0;
+          b.x += nx * push; b.y += ny * push; b.endX += nx * push; b.endY += ny * push; b.vx = b.vy = 0; b.angularVelocity = 0;
+        }
+      }
+    }
+  }
+
+  function updateBridgePlatform(b){
+    const stiffness=0.8, damping=0.93; const dmp = Math.pow(damping, scale);
+    b.points.forEach((pt,i)=>{
+      if (!pt.isFixed){ pt.vy+=gravity * scale; pt.x+=pt.vx * scale; pt.y+=pt.vy * scale; pt.vx*=dmp; pt.vy*=dmp; }
+      if (i>0){ const prev=b.points[i-1]; const dx=pt.x-prev.x, dy=pt.y-prev.y; const dist=Math.hypot(dx,dy)||1; const force=(dist - b.segmentLength)*stiffness; const fx=(dx/dist)*force, fy=(dy/dist)*force; if (!pt.isFixed){ pt.vx -= fx * scale; pt.vy -= fy * scale; } if (!prev.isFixed){ prev.vx += fx * scale; prev.vy += fy * scale; } }
+    });
+  }
+
+  function detectAndResolveBallCollisions(){
+    for (let i=0;i<balls.length;i++) for (let j=i+1;j<balls.length;j++){
+      const a=balls[i], b=balls[j]; const dx=b.x-a.x, dy=b.y-a.y; const dist=Math.hypot(dx,dy);
+      if (dist < a.radius+b.radius){
+        const nx=dx/dist, ny=dy/dist;
+        const dvx=b.vx-a.vx, dvy=b.vy-a.vy; const rel=dvx*nx + dvy*ny; if (rel>0) continue;
+        const e=1.0; const imp= (-(1+e)*rel)/(1/a.mass + 1/b.mass); const ix=imp*nx, iy=imp*ny;
+        a.vx-=ix/a.mass; a.vy-=iy/a.mass; b.vx+=ix/b.mass; b.vy+=iy/b.mass;
+        const overlap=(a.radius+b.radius - dist)/2; a.x-=overlap*nx; a.y-=overlap*ny; b.x+=overlap*nx; b.y+=overlap*ny;
+      }
+    }
+  }
+
+  // ==== Targets (win check) ====
+function resetTargetTimers(){
+  for (const t of targets){
+    t.insideAccum = 0;
+    t.required = TARGET_REQUIRED_TIME;
+    t.done = false;            // NEW: per-target completion flag
+  }
+}
+
+
+function updateTargetsAndWinCheck(){
+  if (targets.length === 0) return;
+
+  // Update each target's progress; mark done when held long enough
+  for (const t of targets){
+    if (t.done) continue;
+
+    let inside = false;
+    for (const ball of balls){
+      const d = Math.hypot(ball.x - t.x, ball.y - t.y);
+      if (d + ball.radius <= t.radius){ inside = true; break; }
+    }
+
+    t.insideAccum = inside ? (t.insideAccum || 0) + dt : 0;
+
+    if (t.insideAccum >= (t.required || TARGET_REQUIRED_TIME)){
+      t.done = true;
+      t.insideAccum = t.required || TARGET_REQUIRED_TIME; // clamp
+    }
+  }
+
+  // If all targets are done, attempt to complete the level
+  const allDone = targets.length > 0 && targets.every(t => t.done);
+  if (allDone){
+    const total = calcTotalCost();
+    const over  = levelBudget > 0 && total > levelBudget;
+
+    levelCompleted   = true;
+    overBudgetOnWin  = over;
+    timersRunning    = false;
+
+    if (!over) setLevelCompleted?.(currentLevel, true); // unlock next level
+    refreshLevelLocks?.();
+  }
+}
+
+
+
+  // ==== Ball vs platform collisions ====
+  function platformCollision(ball, p){
+    if (p.type === 'bridge'){
+      for (let i=0;i<p.points.length-1;i++){
+        const A=p.points[i], B=p.points[i+1]; const c=closestPointOnSegment(ball.x,ball.y,A.x,A.y,B.x,B.y);
+        const d=Math.hypot(ball.x-c.x, ball.y-c.y); if (d < ball.radius){ resolveCollisionWithRope(ball, A, B, c); }
+      }
+      return false;
+    } else {
+      const c = closestPointOnPlatform(ball.x, ball.y, p); const d = Math.hypot(ball.x - c.x, ball.y - c.y); return d < ball.radius;
+    }
+  }
+
+  function surfaceVelocityAt(p, cx, cy){
+    let vx = 0, vy = 0; const tx = Math.cos(p.angle), ty = Math.sin(p.angle);
+    if (p.releasing){ const dir = (p.isFixedStart && !p.isFixedEnd) ? 1 : ((!p.isFixedStart && p.isFixedEnd) ? -1 : 0); const speedFE = (p.releaseSpeed || 0) / 60; vx += dir * speedFE * tx; vy += dir * speedFE * ty; }
+    const oneFixed = (!!p.isFixedStart) ^ (!!p.isFixedEnd);
+    if (oneFixed){ const px = p.isFixedStart ? p.x : p.endX; const py = p.isFixedStart ? p.y : p.endY; const rx = cx - px, ry = cy - py; const w = p.angularVelocity || 0; vx += -w * ry; vy +=  w * rx; }
+    vx += p.vx || 0; vy += p.vy || 0; return {vx, vy};
+  }
+
+  function resolveBallVsPlatform(ball, p){
+    const closest = closestPointOnPlatform(ball.x, ball.y, p);
+    const nx0 = ball.x - closest.x, ny0 = ball.y - closest.y; const dist = Math.hypot(nx0, ny0) || 1; const nx = nx0 / dist, ny = ny0 / dist;
+    // impact strength from relative normal speed (before bounce response)
+    const surf = surfaceVelocityAt(p, closest.x, closest.y); // if you moved it, ensure it's defined before
+    let rvx = ball.vx - surf.vx, rvy = ball.vy - surf.vy;
+    const vN_pre = rvx * nx + rvy * ny;          // < 0 when approaching surface
+    const impactStrength = clamp(Math.abs(Math.min(0, vN_pre)) / 250, 0, 1.5);
+
+    // choose style: sparks for high-bounce, dust otherwise
+    const style = (p.bounce || 0) >= 0.6 ? 'spark' : 'dust';
+    if (impactStrength > 0.02){
+      emitImpactGeneric(closest.x, closest.y, nx, ny, impactStrength, style);
+    }
+
+    const penetration = ball.radius - dist; if (penetration > 0){ ball.x += nx * penetration; ball.y += ny * penetration; }
+    const tx = Math.cos(p.angle), ty = Math.sin(p.angle); const vTan = rvx * tx + rvy * ty;
+
+    if (!p.isFixedEnd || !p.isFixedStart){
+      const impact = 0.1; p.vx = (p.vx || 0) + nx * impact * Math.sign(rvx); p.vy = (p.vy || 0) + ny * impact * Math.sign(rvy);
+      const impAng = Math.atan2(ny, nx); const diff = impAng - p.angle; p.angularVelocity = (p.angularVelocity || 0) - Math.sin(diff) * impact;
+    }
+
+    if ((p.expansionRateFE || 0) > 0){ const T = Math.max(0, p.tension || 0); const snapFE = Math.min(p.expansionRateFE, 250); const k = 0.004 * T; rvx += nx * k * snapFE; rvy += ny * k * snapFE; }
+
+    const vN = rvx * nx + rvy * ny;
+    if ((p.bounce || 0) > 0){ const e = p.bounce; rvx -= (1 + e) * vN * nx; rvy -= (1 + e) * vN * ny; }
+    else { rvx -= vN * nx; rvy -= vN * ny; const slipX = tx * vTan * ballFriction; const slipY = ty * vTan * ballFriction; rvx = slipX; rvy = slipY; }
+
+    ball.vx = rvx + surf.vx; ball.vy = rvy + surf.vy;
+    const newVN = (ball.vx - surf.vx) * nx + (ball.vy - surf.vy) * ny;
+    if (newVN < 0){ ball.vx -= newVN * nx; ball.vy -= newVN * ny; }
+    ball.x += nx * 0.01; ball.y += ny * 0.01;
+  }
+
+  function resolveCollisionWithRope(ball, A, B, closest){
+    const dx=ball.x-closest.x, dy=ball.y-closest.y; const dist=Math.hypot(dx,dy); if (!dist) return;
+    const nx=dx/dist, ny=dy/dist; const pen=ball.radius - dist; ball.x += nx*pen; ball.y += ny*pen;
+    const vN_pre = ball.vx*nx + ball.vy*ny;
+    const impactStrength = clamp(Math.abs(Math.min(0, vN_pre)) / 220, 0, 1.5);
+    if (impactStrength > 0.02){
+      emitImpactDust(closest.x, closest.y, nx, ny, impactStrength);
+    }
+    const vN=ball.vx*nx + ball.vy*ny; ball.vx -= 1.6*vN*nx; ball.vy -= 2*vN*ny; ball.vx*=0.9; ball.vy*=0.9;
+    const impact=0.03; if (!A.isFixed){ A.vx += nx*impact; A.vy += ny*impact; } if (!B.isFixed){ B.vx += nx*impact; B.vy += ny*impact; }
+  }
+
+  // ==== Geometry helpers ====
+  const lineEnd = p => [p.x, p.y, p.x + p.length*Math.cos(p.angle), p.y + p.length*Math.sin(p.angle)];
+  function closestPointOnPlatform(px, py, p){const [x1, y1, x2, y2] = lineEnd(p);return closestPointOnSegment(px, py, x1, y1, x2, y2);}
+  function closestPointOnSegment(px,py,x1,y1,x2,y2){ const A=px-x1,B=py-y1,C=x2-x1,D=y2-y1; const dot=A*C+B*D,len=C*C+D*D; let param = (len!==0)? dot/len : -1; if (param<0) param=0; if (param>1) param=1; return { x:x1+param*C, y:y1+param*D }; }
+  function pointToLineDistance(px, py, x1, y1, x2, y2){const c = closestPointOnSegment(px, py, x1, y1, x2, y2);return Math.hypot(px - c.x, py - c.y);}
+  function projectPointOntoLine(px, py, x1, y1, x2, y2){ const A = px - x1, B = py - y1, C = x2 - x1, D = y2 - y1; const lenSq = C*C + D*D; if (lenSq === 0) return { x: x1, y: y1, t: 0 }; let t = (A*C + B*D) / lenSq; if (t < 0) t = 0; else if (t > 1) t = 1; return { x: x1 + t*C, y: y1 + t*D, t }; }
+  function platformsOverlap(p1,p2){ const s1x=p1.x, s1y=p1.y, e1x=p1.x + p1.length*Math.cos(p1.angle), e1y=p1.y + p1.length*Math.sin(p1.angle); const s2x=p2.x, s2y=p2.y, e2x=p2.x + p2.length*Math.cos(p2.angle), e2y=p2.y + p2.length*Math.sin(p2.angle); return linesIntersect(s1x,s1y,e1x,e1y,s2x,s2y,e2x,e2y); }
+  function linesIntersect(x1,y1,x2,y2,x3,y3,x4,y4){ const denom=(x1-x2)*(y3-y4) - (y1-y2)*(x3-x4); if (denom===0) return false; const t=((x1-x3)*(y3-y4) - (y1-y3)*(x3-x4))/denom; const u=-((x1-x2)*(y1-y3) - (y1-y2)*(x1-x3))/denom; return t>=0 && t<=1 && u>=0 && u<=1; }
+  function platformEndpoints(p){ const sx = p.x, sy = p.y; const ex = p.x + p.length*Math.cos(p.angle); const ey = p.y + p.length*Math.sin(p.angle); return {sx, sy, ex, ey}; }
+  function closestPointsBetweenSegments(ax,ay,bx,by, cx,cy,dx,dy){
+    const u = {x:bx-ax, y:by-ay}, v = {x:dx-cx, y:dy-cy}; const w0 = {x:ax-cx, y:ay-cy};
+    const a = u.x*u.x + u.y*u.y, b = u.x*v.x + u.y*v.y, c = v.x*v.x + v.y*v.y, d = u.x*w0.x + u.y*w0.y, e = v.x*w0.x + v.y*w0.y;
+    const D = a*c - b*b; let sc, sN, sD = D; let tc, tN, tD = D; const EPS=1e-6;
+    if (D < EPS){ sN = 0.0; sD = 1.0; tN = e; tD = c; }
+    else { sN = (b*e - c*d); tN = (a*e - b*d); if (sN < 0){ sN = 0; tN = e; tD = c; } else if (sN > sD){ sN = sD; tN = e + b; tD = c; } }
+    if (tN < 0){ tN = 0; if (-d < 0) sN = 0; else if (-d > a) sN = sD; else { sN = -d; sD = a; } }
+    else if (tN > tD){ tN = tD; if ((-d + b) < 0) sN = 0; else if ((-d + b) > a) sN = sD; else { sN = (-d + b); sD = a; } }
+    sc = Math.abs(sN) < EPS ? 0 : sN / sD; tc = Math.abs(tN) < EPS ? 0 : tN / tD;
+    const paX = ax + sc*u.x, paY = ay + sc*u.y; const pbX = cx + tc*v.x, pbY = cy + tc*v.y;
+    const dxv = pbX - paX, dyv = pbY - paY; const dist = Math.hypot(dxv, dyv); const nx = dist>0 ? dxv/dist : 0; const ny = dist>0 ? dyv/dist : 0;
+    return {paX, paY, pbX, pbY, dist, nx, ny};
+  }
+  function capsuleHit(a,b){
+    const A = platformEndpoints(a), B = platformEndpoints(b);
+    const cp = closestPointsBetweenSegments(A.sx,A.sy,A.ex,A.ey, B.sx,B.sy,B.ex,B.ey);
+    const ra = (a.thickness||platformThickness)/2, rb = (b.thickness||platformThickness)/2, rsum = ra + rb;
+    if (cp.dist < rsum){ return { overlap: rsum - cp.dist, nx: cp.nx, ny: cp.ny }; }
+    return null;
+  }
+
+  function saveLevel(levelNum){
+    const n = Math.max(1, Number(levelNum) || 1);
+    const data = {
+	 budget: levelBudget,                // <— persist budget
+      balls: balls.map(b=>({
+        x:b.x, y:b.y, radius:b.radius, vx:0, vy:0, mass:b.mass,
+        fromLevel: !!b.fromLevel
+      })),
+      targets: (targets||[]).map(t=>({
+        x:t.x, y:t.y, radius:t.radius,
+        fromLevel: !!t.fromLevel
+      })),
+      platforms: platforms.map(p=>{
+        if (p.type==='bridge') return {
+          type:p.type,
+          segmentLength:p.segmentLength,
+          costLength: p.costLength || (p.segmentLength * (p.points.length-1)),
+          points: p.points.map(pt=>({
+            x:pt.x, y:pt.y, isFixed:!!pt.isFixed,
+            timer: pt.timer||null, costTimer: pt.costTimer||null
+          })),
+          fromLevel: !!p.fromLevel
+        };
+        return {
+          type:'bouncy', x:p.x, y:p.y, length:p.length, angle:p.angle,
+          thickness:p.thickness||platformThickness,
+          bounce:p.bounce||0, tension:p.tension||0,
+          isFixedStart:!!p.isFixedStart, isFixedEnd:!!p.isFixedEnd,
+          timerStart:p.timerStart||null, timerEnd:p.timerEnd||null,
+          timerStartCost: p.timerStartCost||null, timerEndCost: p.timerEndCost||null,
+          costLength: p.costLength || p.length,
+          fromLevel: !!p.fromLevel
+        };
+      })
+    };
+    localStorage.setItem(`physicsLevel_${n}`, JSON.stringify(data));
+  }
+
+  function loadLevel(levelNum){
+    const n = Math.max(1, Number(levelNum) || 1);
+    const lsKey = `physicsLevel_${n}`;
+    let data = null;
+
+    // Try per-level save
+    const rawLv = localStorage.getItem(lsKey);
+    if (rawLv){ try { data = JSON.parse(rawLv); } catch(e){ console.warn('Bad JSON in', lsKey, e); } }
+
+    // Fallback to exported LEVELS array
+    if (!data && window.LEVELS && Array.isArray(window.LEVELS) && window.LEVELS[n-1]) {
+      data = window.LEVELS[n-1];
+    }
+
+    // Legacy single-slot fallback
+    if (!data){
+      const rawSingle = localStorage.getItem('physicsLevel');
+      if (rawSingle){ try { data = JSON.parse(rawSingle); } catch(e){ console.warn('Bad JSON in physicsLevel', e); } }
+    }
+
+    // No data -> fresh scene
+    if (!data){
+      balls = [{ x:100, y:100, radius:20, vx:0, vy:0, mass:1, isDragging:false, rotation:0, fromLevel:false }];
+      platforms = [];
+      targets = [];
+      levelBeaten = false;
+	  levelCompleted = false;
+      overBudgetOnWin = false;
+	  timersRunning = isPlaying;
+      updateTotalCost?.();
+      return false;
+    }
+
+	levelBudget = Math.max(0, Number(data.budget) || 0);
+	if (budgetInput) budgetInput.value = String(levelBudget);
+
+    // --- Rehydrate keeping fromLevel as saved (default true for legacy levels) ---
+    balls = (data.balls||[]).map(b=>({
+      x:b.x, y:b.y, radius:b.radius ?? 20, vx:0, vy:0, mass:b.mass ?? 1,
+      isDragging:false, rotation:0,
+      fromLevel: b.fromLevel ?? true
+    }));
+
+    targets = (data.targets||[]).map(t=>({
+      x:t.x, y:t.y, radius: t.radius ?? DEFAULT_TARGET_RADIUS,
+      insideAccum: 0, required: TARGET_REQUIRED_TIME,
+      fromLevel: t.fromLevel ?? true,
+      done: false
+    }));
+
+    platforms = (data.platforms||[]).map(p=>{
+      if (p.type === 'bridge'){
+        return {
+          type:'bridge',
+          points: (p.points||[]).map(pt=>({
+            x:pt.x, y:pt.y, vx:0, vy:0,
+            isFixed: !!pt.isFixed,
+            timer: pt.timer ?? null,
+            costTimer: pt.costTimer ?? null
+          })),
+          segmentLength: p.segmentLength,
+          costLength: p.costLength ?? (p.segmentLength * (p.points.length-1)),
+          fromLevel: p.fromLevel ?? true
+        };
+      }
+      const length = p.length, angle = p.angle, x = p.x, y = p.y;
+      return {
+        type:'bouncy',
+        x, y, length, angle,
+        thickness: p.thickness ?? platformThickness,
+        bounce: p.bounce ?? 0,
+        tension: p.tension ?? 0,
+        isFixedStart: !!p.isFixedStart,
+        isFixedEnd:   !!p.isFixedEnd,
+        angularVelocity: 0,
+        endX: x + length * Math.cos(angle),
+        endY: y + length * Math.sin(angle),
+        timerStart: p.timerStart ?? null,
+        timerEnd:   p.timerEnd   ?? null,
+        timerStartCost: p.timerStartCost ?? null,
+        timerEndCost:   p.timerEndCost   ?? null,
+        costLength: p.costLength ?? length,
+        releasing:false, targetLength:null, releaseSpeed:0, expansionRateFE:0,
+        fromLevel: p.fromLevel ?? true
+      };
+    });
+
+    levelBeaten = false;
+    timersRunning = isPlaying;
+    updateTotalCost?.();
+    return true;
+  }
+
+  // ==== Cost calculation ====
+  function calcPlatformCost(p){
+    if (p.fromLevel) return 0; // FREE if it came from the level
+    if (p.type === 'bridge'){
+      const span = p.costLength || (p.segmentLength * (p.points.length - 1));
+      let c = span * COST.bridgePerPx;
+      for (const pt of p.points){ const secs = pt.costTimer || 0; c += secs * COST.timerPerSecond; }
+      return c;
+    } else {
+      const len = p.costLength || p.length || 0;
+      let c = COST.platformBase + len * COST.platformPerPx;
+      c += (p.bounce||0) * COST.bouncePerUnit;
+      c += (p.tension||0) * COST.tensionPerUnit;
+      const sSecs = p.timerStartCost || 0, eSecs = p.timerEndCost || 0;
+      c += (sSecs + eSecs) * COST.timerPerSecond;
+      return c;
+    }
+  }
+  function calcTotalCost(){
+    let total = 0;
+
+    // Only user-added (non-locked) balls/targets count
+    total += balls.filter(b => !b.fromLevel).length * COST.ball;
+    total += targets.filter(t => !t.fromLevel).length * COST.target;
+
+    // Platforms: calcPlatformCost already zeroes out fromLevel, but
+    // we can skip them here too for clarity/perf:
+    for (const p of platforms){
+      if (p.fromLevel) continue;
+      total += calcPlatformCost(p);
+    }
+
+    return Math.round(total);
+  }
+
+  function updateTotalCost(){
+  const total = calcTotalCost();
+  const over = levelBudget > 0 && total > levelBudget;
+
+  if (levelBudget > 0) {
+    totalCostEl.textContent = `Total: £${total} / £${levelBudget}`;
+  } else {
+    totalCostEl.textContent = `Total: £${total}`;
+  }
+
+  totalCostEl.classList.toggle('over', over);
+}
+
+
+  function simulate(dt){
+    updateParticles(dt);
+
+    // Find fastest ball speed
+    let maxV = 0;
+    for (const b of balls) {
+      const v = Math.hypot(b.vx, b.vy);
+      if (v > maxV) maxV = v;
+    }
+
+    // Max distance per substep ~40% of ball radius
+    const maxStep = Math.max(2, (balls[0]?.radius || 20) * 0.4);
+
+    // Number of substeps
+    const steps = Math.max(1, Math.ceil((maxV * dt) / maxStep));
+
+    const dtStep = dt / steps;
+    for (let i = 0; i < steps; i++) {
+      scale = dtStep * 60;   // keep scale consistent
+      updatePlatforms();
+      updateBalls();
+      detectAndResolveBallCollisions();
+      updateTargetsAndWinCheck();
+    }
+  }
+
+  // ==== Main loop ====
+  function animate(){
+    drawBackdrop();
+    drawParticles();
+    // accumulate real time, clamp to avoid spiral of death
+    const now = performance.now();
+    acc += Math.min(0.1, (now - last) / 1000);
+    last = now;
+
+    // consume time in fixed steps
+    while (acc >= FIXED_DT) {
+      const h = FIXED_DT / SUBSTEPS;
+      for (let s = 0; s < SUBSTEPS; s++) {
+        // keep your existing code happy by updating the globals it uses
+        dt = h;
+        scale = h * 60;
+
+        if (isPlaying && !levelCompleted) {
+          // you already have simulate(dt); keep using it
+          simulate(h);
+        }
+      }
+      acc -= FIXED_DT;
+    }
+
+    resetTransform();
+    setWorldTransform();
+
+    drawTargets();
+    drawBalls();
+    drawPlatforms();
+    drawPlatformPreview();
+    drawTargetPreview();
+
+    drawWinOverlay();
+    updateTotalCost();
+    requestAnimationFrame(animate);
+  }
+
+  function stepPhysicsOnce(dtFixed){
+    // sub-stepping to reduce tunneling
+    const h = dtFixed / SUBSTEPS;
+    for (let s = 0; s < SUBSTEPS; s++){
+      // keep your existing code happy by updating the globals it uses
+      dt = h;
+      scale = h * 60; // your integrators multiply by "scale"
+
+      if (isPlaying && !levelCompleted){
+        updateBalls();
+        updatePlatforms();          // (we’ll make splits deferred inside)
+        detectAndResolveBallCollisions();
+        updateTargetsAndWinCheck();
+      }
+    }
+  }
+
+  loadLevel(currentLevel);
+  animate();
+  window.addEventListener('resize', ()=>{ resizeCanvas(); });
+
+  // Optional: export all levels
+  function exportAllLevels(){
+    const all = [];
+    for (let i=1; i<=13; i++){
+      const raw = localStorage.getItem(`physicsLevel_${i}`);
+      if (raw){ try { all.push(JSON.parse(raw)); } catch(e){ console.warn(`Level ${i} JSON parse failed`, e); all.push(null); } }
+      else { all.push(null); }
+    }
+    const output = "window.LEVELS = " + JSON.stringify(all, null, 2) + ";";
+    console.log(output);
+    const blob = new Blob([output], {type: "application/javascript"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "levels.js"; a.click();
+    URL.revokeObjectURL(url);
+    return all;
+  }
+
+  function drawBackdrop(){
+    // --- draw UI/backdrop in SCREEN space ---
+    resetTransform();
+
+    // Whole-canvas clear
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // World viewport rectangle in screen pixels
+    const vx = view.offX;
+    const vy = view.offY;
+    const vw = VIRT_W * view.scale;
+    const vh = VIRT_H * view.scale;
+
+    // Wallpaper only inside the world viewport (so it aligns with physics bounds)
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(vx, vy, vw, vh);
+    ctx.clip();
+
+    // Light blue wall
+    ctx.fillStyle = '#FCFBE1';
+    ctx.fillRect(vx, vy, vw, vh);
+
+    // Fish pattern (pixel-sized, clipped to the viewport so edges match)
+    ctx.fillStyle = '#B9F5AB';
+    const fishSpacingX = 60;
+    const fishSpacingY = 40;
+    const fishSize = 20;
+    for (let y = vy + 20; y < vy + vh - 40; y += fishSpacingY) {
+      for (let x = vx + 30; x < vx + vw - 30; x += fishSpacingX) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.scale(fishSize/40, fishSize/40);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 20, 10, 0, 0, Math.PI*2); // body
+        ctx.moveTo(-20, 0);                         // tail
+        ctx.lineTo(-30, -10);
+        ctx.lineTo(-30, 10);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // === Wooden skirting board at bottom ===
+    const skirtingHeightPx = 20;
+    const skirtingTop = vy + vh - skirtingHeightPx;
+
+    // Wood gradient fill
+    const woodGrad = ctx.createLinearGradient(0, skirtingTop, 0, skirtingTop + skirtingHeightPx);
+    woodGrad.addColorStop(0, '#8b5a2b');   // lighter brown (top)
+    woodGrad.addColorStop(1, '#5c3317');   // darker brown (bottom)
+
+    ctx.fillStyle = woodGrad;
+    ctx.fillRect(vx, skirtingTop, vw, skirtingHeightPx);
+
+    // Grain effect (subtle horizontal lines)
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 1;
+    for (let y = skirtingTop + 6; y < skirtingTop + skirtingHeightPx; y += 6) {
+      ctx.beginPath();
+      ctx.moveTo(vx, y);
+      ctx.lineTo(vx + vw, y);
+      ctx.stroke();
+    }
+
+    // Outline (top edge)
+    ctx.beginPath();
+    ctx.moveTo(vx, skirtingTop);
+    ctx.lineTo(vx + vw, skirtingTop);
+    ctx.strokeStyle = '#3b2415';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // --- draw cat IN WORLD SPACE so it scales with the game ---
+    setWorldTransform();
+
+    // Place cat relative to world border (so it never drifts off-screen)
+    const marginRightW = 80;     // world units from the right wall
+    const catH = 130 / view.scale; // scale previous pixel sizes into world units
+    const catW = 100 / view.scale;
+    const floorYWorld = VIRT_H;  // world bottom
+    const cx = VIRT_W - marginRightW - catW * 0.5;
+    const cy = floorYWorld - (skirtingHeightPx / view.scale) - catH * 0.5;
+
+    // Draw the same cute cat (now in world units, so it scales with zoom)
+    ctx.fillStyle = '#111';
+
+    // Body
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + catH * 0.25, catW * 0.35, catH * 0.3, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    // Head
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - catH * 0.1, catW * 0.3, catH * 0.3, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    // Ears
+    ctx.beginPath();
+    ctx.moveTo(cx - catW*0.25, cy - catH*0.25);
+    ctx.lineTo(cx - catW*0.15, cy - catH*0.5);
+    ctx.lineTo(cx - catW*0.05, cy - catH*0.25);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(cx + catW*0.25, cy - catH*0.25);
+    ctx.lineTo(cx + catW*0.15, cy - catH*0.5);
+    ctx.lineTo(cx + catW*0.05, cy - catH*0.25);
+    ctx.closePath();
+    ctx.fill();
+
+    // Tail (curved outward)
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = 10 / view.scale; // keep tail thickness visually similar
+    ctx.beginPath();
+    ctx.moveTo(cx + catW*0.3, cy + catH*0.15);
+    ctx.quadraticCurveTo(
+      cx + catW*0.7, cy,
+      cx + catW*0.4, cy - catH*0.25
+    );
+    ctx.stroke();
+
+    // Eyes
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(cx - catW*0.12, cy - catH*0.1, (7 / view.scale), 0, Math.PI*2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx + catW*0.12, cy - catH*0.1, (7 / view.scale), 0, Math.PI*2);
+    ctx.fill();
+
+    // Pupils
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.arc(cx - catW*0.12, cy - catH*0.1, (3 / view.scale), 0, Math.PI*2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx + catW*0.12, cy - catH*0.1, (3 / view.scale), 0, Math.PI*2);
+    ctx.fill();
+
+    // Nose
+    ctx.fillStyle = '#ff9aa2';
+    ctx.beginPath();
+    ctx.arc(cx, cy - catH*0.05, (4 / view.scale), 0, Math.PI*2);
+    ctx.fill();
+
+    // Whiskers
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2 / view.scale;
+    ctx.beginPath();
+    ctx.moveTo(cx - 5 / view.scale, cy - catH*0.05);
+    ctx.lineTo(cx - catW*0.25, cy - catH*0.1);
+    ctx.moveTo(cx - 5 / view.scale, cy - catH*0.03);
+    ctx.lineTo(cx - catW*0.25, cy - catH*0.0);
+    ctx.moveTo(cx + 5 / view.scale, cy - catH*0.05);
+    ctx.lineTo(cx + catW*0.25, cy - catH*0.1);
+    ctx.moveTo(cx + 5 / view.scale, cy - catH*0.03);
+    ctx.lineTo(cx + catW*0.25, cy - catH*0.0);
+    ctx.stroke();
+  }
+
+  function drawYarnBall(ball, opts = {}){
+    const r = ball.radius;
+    const hue = opts.hue ?? 0;               // 0 = pure red hue
+    const base = `hsl(${hue}, 90%, 45%)`;    // bright, saturated red body
+    const edge = `hsl(${hue}, 95%, 25%)`;    // deep crimson edge
+    const light = `hsl(${hue}, 100%, 70%)`;  // strong highlight
+
+    ctx.save();
+    ctx.translate(ball.x, ball.y);
+    ctx.rotate(ball.rotation);
+
+    // --- soft circular body with radial shading ---
+    const g = ctx.createRadialGradient(-r*0.25, -r*0.25, r*0.2, 0, 0, r);
+    g.addColorStop(0, base);
+    g.addColorStop(1, edge);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI*2);
+    ctx.fill();
+
+    // --- wound strands (curved arcs that rotate with the ball) ---
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.lineWidth = Math.max(1, r * 0.08);
+    const turns = 20;                         // number of visible strands
+    for (let i = 0; i < turns; i++){
+      const t = (i / turns);
+      const rr = r * (0.35 + 0.55 * t);
+      const arc = Math.PI * (0.7 + 0.6 * Math.sin(i*1.3)); // vary arc length for organic look
+      const start = -arc/2;
+      const end   =  arc/2;
+
+      ctx.save();
+      // fan the strand orientation a bit so it looks wound
+      ctx.rotate((i * 0.6) + Math.sin(i*0.7)*0.2);
+      ctx.beginPath();
+      ctx.arc(0, 0, rr, start, end);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // extra cross-wraps
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = Math.max(1, r * 0.06);
+    for (let i = 0; i < 5; i++){
+      const rr = r * (0.35 + 0.6 * (i/4));
+      ctx.save();
+      ctx.rotate((i*1.2) + 0.8);             // tilt another direction
+      ctx.beginPath();
+      ctx.arc(0, 0, rr, -1.1, 1.1);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // --- specular highlight ---
+    ctx.fillStyle = light;
+    ctx.beginPath();
+    ctx.ellipse(-r*0.35, -r*0.35, r*0.22, r*0.14, -0.6, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.restore();
+
+    // --- optional trailing thread (behind ball, scales with speed) ---
+    const speed = Math.hypot(ball.vx||0, ball.vy||0);
+    if (speed > 0.2){
+      const tailLen = Math.min(60, speed * 4);         // in world px
+      const angle = Math.atan2(ball.vy||0, ball.vx||0);
+      const tx = ball.x - Math.cos(angle) * (r + 2);
+      const ty = ball.y - Math.sin(angle) * (r + 2);
+      const bx = ball.x - Math.cos(angle) * (r + tailLen);
+      const by = ball.y - Math.sin(angle) * (r + tailLen);
+
+      ctx.save();
+      ctx.strokeStyle = `hsl(${hue}, 65%, 40%)`;
+      ctx.lineWidth = Math.max(1, r * 0.05);
+      ctx.beginPath();
+      ctx.moveTo(tx, ty);
+      // a tiny wiggle so it feels thread-like
+      const mx = (tx + bx) / 2 + Math.cos(performance.now()*0.05 + ball.x*0.01) * 6;
+      const my = (ty + by) / 2 + Math.sin(performance.now()*0.06 + ball.y*0.01) * 6;
+      ctx.quadraticCurveTo(mx, my, bx, by);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  function updateParticles(dt){
+  const g = 500; // slight gravity for dust
+  for (let i = fx.length - 1; i >= 0; i--){
+    const p = fx[i];
+    p.life += dt;
+    const t = p.life / p.ttl;
+
+    // motion
+    if (p.type === 'dust'){ p.vy += g * dt; }
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.angle += p.spin * dt;
+
+    // fade and shrink
+    p.alpha = 1 - t;
+    if (p.type === 'dust') p.size *= (1 - 0.6*dt);
+
+    if (t >= 1) fx.splice(i, 1);
+  }
+}
+
+function drawParticles(){
+  // world space
+  ctx.save();
+  // subtle additive look without full globalCompositeOperation changes
+  fx.forEach(p=>{
+    if (p.type === 'dust'){
+      ctx.globalAlpha = Math.max(0, p.alpha) * 0.6;
+      const r = Math.max(0.5, p.size);
+      const grd = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+      grd.addColorStop(0, 'rgba(120,120,120,0.7)');
+      grd.addColorStop(1, 'rgba(120,120,120,0.0)');
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI*2);
+      ctx.fill();
+    } else {
+      // spark: short line
+      ctx.globalAlpha = Math.max(0, p.alpha);
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = 'rgba(255,200,60,0.9)';
+      const len = p.size;
+      const ex = p.x - Math.cos(p.angle) * len;
+      const ey = p.y - Math.sin(p.angle) * len;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+    }
+  });
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+  function emitImpactDust(x, y, nx, ny, intensity){
+  // small puffs (circles) that drift outward
+  const count = clamp(Math.round(3 + intensity * 10), 3, 18);
+  for (let i=0;i<count;i++){
+    const ang = Math.atan2(ny, nx) + rand(-0.9, 0.9);
+    const sp  = rand(40, 120) * (0.3 + 0.7*Math.min(1, intensity));
+    fx.push({
+      x, y,
+      vx: Math.cos(ang)*sp,
+      vy: Math.sin(ang)*sp,
+      life: 0, ttl: rand(0.35, 0.75),
+      size: rand(4, 10),
+      alpha: 1,
+      spin: rand(-2, 2),
+      angle: ang,
+      type: 'dust'
+    });
+  }
+  if (fx.length > FX_MAX) fx.splice(0, fx.length - FX_MAX);
+}
+
+function emitImpactSparks(x, y, nx, ny, intensity){
+  // thin sparks (short-lived)
+  const count = clamp(Math.round(4 + intensity * 14), 4, 24);
+  for (let i=0;i<count;i++){
+    const ang = Math.atan2(ny, nx) + rand(-0.5, 0.5);
+    const sp  = rand(120, 260) * (0.3 + 0.7*Math.min(1, intensity));
+    fx.push({
+      x, y,
+      vx: Math.cos(ang)*sp,
+      vy: Math.sin(ang)*sp,
+      life: 0, ttl: rand(0.12, 0.28),
+      size: rand(8, 16),     // used as spark length
+      alpha: 1,
+      spin: 0,
+      angle: ang,
+      type: 'spark'
+    });
+  }
+  if (fx.length > FX_MAX) fx.splice(0, fx.length - FX_MAX);
+}
+
+function emitImpactGeneric(x, y, nx, ny, intensity, kind='auto'){
+  // kind 'auto' picks sparks for bouncy, dust otherwise
+  if (kind === 'spark') return emitImpactSparks(x, y, nx, ny, intensity);
+  if (kind === 'dust')  return emitImpactDust(x, y, nx, ny, intensity);
+  // default auto: blend
+  emitImpactDust(x, y, nx, ny, intensity*0.8);
+  emitImpactSparks(x, y, nx, ny, intensity*0.6);
+}
+  </script>
+</body>
+</html>
