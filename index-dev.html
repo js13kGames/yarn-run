@@ -1048,14 +1048,10 @@ function updateTargetsAndWinCheck(){
   function saveLevel(levelNum){
     const n = Math.max(1, Number(levelNum) || 1);
     const data = {
-	 budget: levelBudget,                // <— persist budget
-      balls: balls.map(b=>({
-        x:b.x, y:b.y, radius:b.radius, vx:0, vy:0, mass:b.mass,
-        fromLevel: !!b.fromLevel
-      })),
-      targets: (targets||[]).map(t=>({
-        x:t.x, y:t.y, radius:t.radius,
-        fromLevel: !!t.fromLevel
+      budget: levelBudget,
+      balls: balls.map(b => ({ x: b.x, y: b.y, fromLevel: !!b.fromLevel })), // <- lean
+      targets: (targets||[]).map(t => ({
+        x:t.x, y:t.y, radius:t.radius, fromLevel: !!t.fromLevel
       })),
       platforms: platforms.map(p=>{
         if (p.type==='bridge') return {
@@ -1064,7 +1060,7 @@ function updateTargetsAndWinCheck(){
           costLength: p.costLength || (p.segmentLength * (p.points.length-1)),
           points: p.points.map(pt=>({
             x:pt.x, y:pt.y, isFixed:!!pt.isFixed,
-            timer: pt.timer||null, costTimer: pt.costTimer||null
+            timer: pt.timer ?? null, costTimer: pt.costTimer ?? null
           })),
           fromLevel: !!p.fromLevel
         };
@@ -1073,15 +1069,21 @@ function updateTargetsAndWinCheck(){
           thickness:p.thickness||platformThickness,
           bounce:p.bounce||0, tension:p.tension||0,
           isFixedStart:!!p.isFixedStart, isFixedEnd:!!p.isFixedEnd,
-          timerStart:p.timerStart||null, timerEnd:p.timerEnd||null,
-          timerStartCost: p.timerStartCost||null, timerEndCost: p.timerEndCost||null,
-          costLength: p.costLength || p.length,
+          timerStart:p.timerStart ?? null, timerEnd:p.timerEnd ?? null,
+          timerStartCost:p.timerStartCost ?? null, timerEndCost:p.timerEndCost ?? null,
+          costLength:p.costLength ?? p.length,
           fromLevel: !!p.fromLevel
         };
       })
     };
-    localStorage.setItem(`physicsLevel_${n}`, JSON.stringify(data));
+
+    // Round numbers to 2 dp to keep files small
+    localStorage.setItem(
+      `physicsLevel_${n}`,
+      JSON.stringify(data, (k,v)=>typeof v==='number' ? +v.toFixed(2) : v)
+    );
   }
+
 
   function loadLevel(levelNum){
     const n = Math.max(1, Number(levelNum) || 1);
@@ -1120,9 +1122,13 @@ function updateTargetsAndWinCheck(){
 	if (budgetInput) budgetInput.value = String(levelBudget);
 
     // --- Rehydrate keeping fromLevel as saved (default true for legacy levels) ---
-    balls = (data.balls||[]).map(b=>({
-      x:b.x, y:b.y, radius:b.radius ?? 20, vx:0, vy:0, mass:b.mass ?? 1,
-      isDragging:false, rotation:0,
+    balls = (data.balls||[]).map(b => ({
+      x: b.x, y: b.y,
+      radius: 20,        // default
+      vx: 0, vy: 0,
+      mass: 1,           // default
+      isDragging: false,
+      rotation: 0,
       fromLevel: b.fromLevel ?? true
     }));
 
@@ -1316,17 +1322,23 @@ function updateTargetsAndWinCheck(){
     const all = [];
     for (let i=1; i<=13; i++){
       const raw = localStorage.getItem(`physicsLevel_${i}`);
-      if (raw){ try { all.push(JSON.parse(raw)); } catch(e){ console.warn(`Level ${i} JSON parse failed`, e); all.push(null); } }
-      else { all.push(null); }
+      if (raw){
+        try { all.push(JSON.parse(raw)); }
+        catch(e){ console.warn(`Level ${i} JSON parse failed`, e); all.push(null); }
+      } else {
+        all.push(null);
+      }
     }
-    const output = "window.LEVELS = " + JSON.stringify(all, null, 2) + ";";
+
+    // ⬇️ Minimal-size JS: round numbers and omit pretty-print whitespace
+    const output = "window.LEVELS=" +
+      JSON.stringify(all, (k,v)=>typeof v==='number' ? +v.toFixed(2) : v) +
+      ";";
+
     console.log(output);
-    const blob = new Blob([output], {type: "application/javascript"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = "levels.js"; a.click();
-    URL.revokeObjectURL(url);
-    return all;
   }
+
+
 
   function drawBackdrop(){
     // --- draw UI/backdrop in SCREEN space ---
