@@ -11,17 +11,16 @@
 <body>
   <div class="controls">
     <div class="row">
+      <button id="bouncyButton">Platform</button>
       <button id="bridgeButton">Bridge</button>
-      <button id="bouncyButton">Bouncy</button>
-      <button id="targetButton">Target</button>
       <button id="timerButton">Timer</button>
       <button id="deleteButton">Delete</button>
-	  <!-- Budget -->
-	<label class="pill" style="margin-left:8px;">
-	Budget £
-	<input id="budgetInput" type="number" min="0" step="10" value="0" style="width:90px; margin-left:6px;">
-	</label>
+      <button id="targetButton">Target</button>
       <span class="pill">Shift = lock H/V</span>
+      <label class="pill" id="budgetlbl" style="margin-left:8px;">
+      Budget £
+      <input id="budgetInput" type="number" min="0" step="10" value="0" style="width:90px; margin-left:6px;">
+      </label>
       <select id="levelSelect" class="pill">
         <option value="1">Level 1</option><option value="2">Level 2</option><option value="3">Level 3</option>
         <option value="4">Level 4</option><option value="5">Level 5</option><option value="6">Level 6</option>
@@ -29,18 +28,12 @@
         <option value="10">Level 10</option><option value="11">Level 11</option><option value="12">Level 12</option>
         <option value="13">Level 13</option>
       </select>
-      <!-- Admin toggle -->
       <label class="pill" style="cursor:pointer;">
         <input type="checkbox" id="adminToggle" checked> Admin
       </label>
     </div>
-    <div class="row">
-      <button id="playBtn">Play</button>
-      <button id="stopBtn" disabled>Stop</button>
-      <span class="pill muted">Play saves; Stop reloads</span>
-    </div>
     <div class="row" id="bouncyRow" style="display:block">
-      <label for="bounceSlider">Bounciness</label>
+      <label for="bounceSlider">Bounce</label>
       <input type="range" id="bounceSlider" min="0" max="1.2" step="0.05" value="0.9"/>
       <span id="bounceVal" class="pill">0.90</span>
       &nbsp;&nbsp;
@@ -50,14 +43,18 @@
     </div>
     <div class="row" id="timerRow" style="display:none">
       <label for="timerSlider">Timer (seconds)</label>
-      <input type="range" id="timerSlider" min="0.5" max="20" step="0.5" value="5"/>
+      <input type="range" id="timerSlider" min="0" max="20" step="0.1" value="1"/>
       <span id="timerVal" class="pill">5.0s</span>
       <span class="pill muted">Click a joint to arm</span>
     </div>
     <div class="row">
+      <button id="playBtn">Play</button>
+      <button id="stopBtn" disabled>Stop</button>
+      <button id="clearBtn">Clear</button>
+    </div>
+    <div class="row">
       <button id="saveBtn">Save</button>
       <button id="loadBtn">Load</button>
-      <button id="clearBtn">Clear</button>
     </div>
   </div>
   <div id="totalCost">Total: £0</div>
@@ -94,7 +91,7 @@
   // ==== Target tunables ====
   const DEFAULT_TARGET_RADIUS = 36, TARGET_REQUIRED_TIME = 3.0;
   // ==== Cost model ====
-  const COST = { ball:50, platformBase:10, platformPerPx:0.10, bridgePerPx:0.08, bouncePerUnit:40, tensionPerUnit:50, timerPerSecond:5, target:100 };
+  const COST = { ball:500, platformBase:10, platformPerPx:0.10, bridgePerPx:0.08, bouncePerUnit:40, tensionPerUnit:50, timerPerSecond:5, target:100 };
   // ==== State ====
   let balls = [];
   let platforms = [];
@@ -129,12 +126,6 @@
   const adminToggle = document.getElementById('adminToggle');
   let isAdmin = adminToggle ? adminToggle.checked : true;
   if (adminToggle) adminToggle.addEventListener('change', () => { isAdmin = adminToggle.checked; });
-	if (adminToggle){
-	  adminToggle.addEventListener('change', () => {
-		isAdmin = adminToggle.checked;
-		refreshLevelLocks();
-	  });
-	}
 
   // Delta-time globals
   let lastTs = performance.now(), dt = 1/60, scale = 1;
@@ -162,6 +153,16 @@
   const stopBtn = document.getElementById('stopBtn');
   const totalCostEl = document.getElementById('totalCost');
   const budgetInput = document.getElementById('budgetInput');
+  const budgetlbl = document.getElementById('budgetlbl');
+
+  if (adminToggle){
+	  adminToggle.addEventListener('change', () => {
+		    isAdmin = adminToggle.checked;
+		  refreshLevelLocks();
+      updateAdminUI();
+	  });
+	}
+
 	if (budgetInput) {
 	  budgetInput.addEventListener('input', () => {
 		levelBudget = Math.max(0, Number(budgetInput.value) || 0);
@@ -216,6 +217,18 @@
 	playBtn.onclick = () => { if (isPlaying) return; saveLevel(currentLevel); setPlayingState(true); levelCompleted = false; overBudgetOnWin = false; resetTargetTimers?.(); };
 	stopBtn.onclick = () => { if (!isPlaying) return; loadLevel(currentLevel); setPlayingState(false); updateTotalCost(); };
   levelSelect.addEventListener('change', () => { if (isPlaying) return; currentLevel = Number(levelSelect.value) || 1; loadLevel(currentLevel); setPlayingState(false); updateTotalCost?.(); });
+
+  function updateAdminUI(){
+    const adminOnly = [targetBtn, budgetlbl, saveBtn, loadBtn]; // add more if needed
+    adminOnly.forEach(btn => btn && (btn.style.display = isAdmin ? '' : 'none'));
+
+    // If we just hid the active mode, fall back to bouncy
+    if (!isAdmin && (selectedPlatformType === 'target')) {
+      timerMode = false; deleteMode = false;
+      setType('bouncy');
+      if (timerRow) timerRow.style.display = 'none';
+    }
+  }
 
 // ===== LEVELS =======
 // ==== Level completion gating ====
