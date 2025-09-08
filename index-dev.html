@@ -155,6 +155,31 @@
   const budgetInput = document.getElementById('budgetInput');
   const budgetlbl = document.getElementById('budgetlbl');
 
+var LEVELS=[{"budget":200,"balls":[{"x":231.37,"y":259.71,"fromLevel":true}],"targets":[{"x":696.96,"y":704.51,"radius":36,"fromLevel":true}],"platforms":[]},{"budget":200,"balls":[{"x":454.25,"y":175.66,"fromLevel":true}],"targets":[{"x":459.92,"y":526.02,"radius":36,"fromLevel":true}],"platforms":[{"type":"bridge","segmentLength":21.3,"costLength":191.71,"points":[{"x":357.92,"y":227.6,"isFixed":true,"timer":null,"costTimer":null},{"x":379.22,"y":227.7,"isFixed":false,"timer":null,"costTimer":null},{"x":400.52,"y":227.81,"isFixed":false,"timer":null,"costTimer":null},{"x":421.83,"y":227.91,"isFixed":false,"timer":null,"costTimer":null},{"x":443.13,"y":228.02,"isFixed":false,"timer":null,"costTimer":null},{"x":464.43,"y":228.12,"isFixed":false,"timer":null,"costTimer":null},{"x":485.73,"y":228.23,"isFixed":false,"timer":null,"costTimer":null},{"x":507.03,"y":228.33,"isFixed":false,"timer":null,"costTimer":null},{"x":528.33,"y":228.44,"isFixed":false,"timer":null,"costTimer":null},{"x":549.63,"y":228.54,"isFixed":true,"timer":null,"costTimer":null}],"fromLevel":true}]},{"budget":600,"balls":[],"targets":[],"platforms":[]},{"budget":0,"balls":[],"targets":[],"platforms":[]},{"budget":0,"balls":[],"targets":[],"platforms":[]},{"budget":0,"balls":[],"targets":[],"platforms":[]},{"budget":0,"balls":[],"targets":[],"platforms":[]},{"budget":0,"balls":[],"targets":[],"platforms":[]},{"budget":0,"balls":[],"targets":[],"platforms":[]},{"budget":0,"balls":[],"targets":[],"platforms":[]},{"budget":0,"balls":[],"targets":[],"platforms":[]},{"budget":0,"balls":[],"targets":[],"platforms":[]},{"budget":0,"balls":[],"targets":[],"platforms":[]}];
+
+  function seedLevelsIfNeeded(){
+    const levels = (globalThis.LEVELS || globalThis.window?.LEVELS);
+    if (!Array.isArray(levels) || !levels.length) return;
+
+    // Don't reseed if we've already done it
+    if (localStorage.getItem('seedz')) return;
+
+    for (let i = 0; i < levels.length; i++){
+      const L = levels[i];
+      if (!L) continue;
+      const key = `physicsLevel_${i+1}`;
+      // Only write if the user doesn't already have a save for this slot
+      if (!localStorage.getItem(key)) {
+        localStorage.setItem(
+          key,
+          JSON.stringify(L, (k,v)=>typeof v==='number' ? +v.toFixed(2) : v) // keep it small
+        );
+      }
+    }
+    localStorage.setItem('seedz', '1');
+  }
+  seedLevelsIfNeeded();
+
   if (adminToggle){
 	  adminToggle.addEventListener('change', () => {
 		    isAdmin = adminToggle.checked;
@@ -1705,6 +1730,6 @@ function emitImpactGeneric(x, y, nx, ny, intensity, kind='auto'){
   emitImpactDust(x, y, nx, ny, intensity*0.8);
   emitImpactSparks(x, y, nx, ny, intensity*0.6);
 }
-  </script>
+</script>
 </body>
 </html>
