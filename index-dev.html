@@ -17,17 +17,13 @@
   <div class="controls">
     <div class="row">
       <button id="bouncyButton">Platform</button>
-      <button id="bridgeButton">Bridge</button>
       <button id="timerButton">Timer</button>
+      <button id="bridgeButton">Bridge</button>
       <button id="deleteButton">Delete</button>
       <button id="targetButton">Target</button>
-      <span class="pill">Shift = lock H/V</span>
-      <span class="pill">Right Click for Ball</span>
-      <span class="pill">H to hide menu</span>
-      <label class="pill" id="budgetlbl" style="margin-left:8px;">
-      Budget £
-      <input id="budgetInput" type="number" min="0" step="10" value="0" style="width:90px; margin-left:6px;">
-      </label>
+      <button id="playBtn">Play</button>
+      <button id="stopBtn" disabled>Stop</button>
+      <button id="clearBtn">Clear</button>
       <select id="levelSelect" class="pill">
         <option value="1">Level 1</option><option value="2">Level 2</option><option value="3">Level 3</option>
         <option value="4">Level 4</option><option value="5">Level 5</option><option value="6">Level 6</option>
@@ -35,6 +31,14 @@
         <option value="10">Level 10</option><option value="11">Level 11</option><option value="12">Level 12</option>
         <option value="13">Level 13</option><option value="14">Sandbox</option>
       </select>
+      <span class="pill">Shift = lock H/V</span>
+      <span class="pill">Right Click for Ball</span>
+      <span class="pill">H to hide menu</span>
+      <span class="pill">I to show tips</span>
+      <label class="pill" id="budgetlbl" style="margin-left:8px;">
+      Budget £
+      <input id="budgetInput" type="number" min="0" step="10" value="0" style="width:90px; margin-left:6px;">
+      </label>
       <label class="pill" style="cursor:pointer;">
         <input type="checkbox" id="adminToggle" checked> Admin
       </label>
@@ -50,14 +54,9 @@
     </div>
     <div class="row" id="timerRow" style="display:none">
       <label for="timerSlider">Timer (seconds)</label>
-      <input type="range" id="timerSlider" min="0" max="20" step="0.1" value="1"/>
+      <input type="range" id="timerSlider" min="0" max="20" step="0.1" value="0.1"/>
       <span id="timerVal" class="pill">5.0s</span>
       <span class="pill muted">Click a joint to arm</span>
-    </div>
-    <div class="row">
-      <button id="playBtn">Play</button>
-      <button id="stopBtn" disabled>Stop</button>
-      <button id="clearBtn">Clear</button>
     </div>
     <div class="row">
       <button id="saveBtn">Save</button>
@@ -65,8 +64,23 @@
     </div>
   </div>
   <div id="totalCost">Total: £0</div>
+  <div id=h onclick="localStorage.h=1;this.hidden=1"
+  style="position:fixed;right:10px;top:70px;z-index:999;background:#FFFF8F;border:1px solid #000;padding:8px 10px;border-radius:8px;font:12px system-ui;line-height:1.2">
+  <b>Build tips [Click to close]</b><br>
+  <ul>
+    <li>Use build menu to set current item</li>
+    <li>Click and drag to place platform / bridge</li>
+    <li>Hold shift - lock horizontal and vertical</li>
+    <li>Right-click to add ball</li>
+    <li>Click platform blue joint to unpin (turns green)</li>
+    <li>Drag platform end to resize</li>
+    <li>Timer→click to add break time to joint</li>
+    <li>Play to sim, Stop to edit</li>
+  </ul>
+  </div>
   <canvas id="canvas"></canvas>
   <script>
+  //setInterval(()=>h.hidden=!(currentLevel==1&&!isAdmin&&!isPlaying&&!localStorage.h),2000)
   const controls = document.querySelector('.controls');
   const canvas = document.getElementById('canvas');
   const ctx = canvas.getContext('2d');
@@ -75,6 +89,9 @@
   canvas.addEventListener('mousedown', () => document.body.classList.add('dragging'));
   window.addEventListener('mouseup', () => document.body.classList.remove('dragging'));
 
+  window.addEventListener('keydown',e=>{
+    if((e.key=='i'||e.key=='I')&&h){localStorage.removeItem('h');h.hidden=0}
+  });
   // Hold Alt to click-through the toolbar (useful to start builds under it)
   window.addEventListener('keydown', (e) => {
     if (e.altKey) document.body.classList.add('passthrough');
