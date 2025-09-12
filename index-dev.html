@@ -31,12 +31,11 @@
         <option value="10">Level 10</option><option value="11">Level 11</option><option value="12">Level 12</option>
         <option value="13">Level 13</option><option value="14">Sandbox</option>
       </select>
-      <span class="pill">Shift = lock H/V</span>
-      <span class="pill">Right Click for Ball</span>
-      <span class="pill">H to hide menu</span>
-      <span class="pill">[I] to show tips [R] to show scores</span>
+      <span class="pill">[Shift] lock H/V</span>
+      <span class="pill">[Right Click] Add Ball</span>
+      <span class="pill">[H] Hide Menu</span>
+      <span class="pill">[I] Show Tips</span>
       <label class="pill" id="budgetlbl" style="margin-left:8px;">
-      Budget £
       <input id="budgetInput" type="number" min="0" step="10" value="0" style="width:90px; margin-left:6px;">
       </label>
       <label class="pill" style="cursor:pointer;">
@@ -63,7 +62,7 @@
       <button id="loadBtn">Load</button>
     </div>
   </div>
-  <div id="totalCost">Total: £0</div>
+  <div id="totalCost">Budget: £0</div>
   <div id=h onclick="localStorage.h=1;this.hidden=1"
   style="position:fixed;right:10px;top:70px;z-index:999;background:#FFFF8F;border:1px solid #000;padding:8px 10px;border-radius:8px;font:12px system-ui;line-height:1.2">
   <b>Build tips [Click to close]</b><br>
@@ -105,12 +104,6 @@ window.addEventListener('keydown', (e) => {
     resizeCanvas?.();
   }
 });
-window.addEventListener('keydown',e=>{
-  if(e.key=='r'||e.key=='R'){
-    renderRecs();
-    recs.hidden=!recs.hidden;
-  }
-});
   // ==== Virtual world & viewport ====
   const VIRT_W = 1600, VIRT_H = 900;
   const MIN_SCREEN_W = 800, MIN_SCREEN_H = 600;
@@ -135,7 +128,7 @@ window.addEventListener('keydown',e=>{
   resizeCanvas();
   // ==== Tunables (world units) ====
   const gravity = 0.5, friction = 0.99, ballFriction = 0.99, platformThickness = 10, endpointRadius = 7, maxSpeed = 50;
-  const MIN_PLATFORM_LEN = 50, SNAP_RADIUS = 15;
+  const MIN_PLATFORM_LEN = 30, SNAP_RADIUS = 15;
   // ==== Target tunables ====
   const DEFAULT_TARGET_RADIUS = 36, TARGET_REQUIRED_TIME = 3.0;
   // ==== Cost model ====
@@ -203,7 +196,7 @@ window.addEventListener('keydown',e=>{
   const budgetInput = document.getElementById('budgetInput');
   const budgetlbl = document.getElementById('budgetlbl');
 
-var LEVELS=[{"budget":150,"balls":[{"x":231.37,"y":259.71,"fromLevel":true}],"targets":[{"x":696.96,"y":704.51,"radius":36,"fromLevel":true}],"platforms":[]},{"budget":50,"balls":[{"x":454.25,"y":175.66,"fromLevel":true}],"targets":[{"x":459.92,"y":526.02,"radius":36,"fromLevel":true}],"platforms":[{"type":"bridge","segmentLength":21.3,"costLength":191.71,"points":[{"x":357.92,"y":227.6,"isFixed":true,"timer":null,"costTimer":null},{"x":379.22,"y":227.7,"isFixed":false,"timer":null,"costTimer":null},{"x":400.52,"y":227.81,"isFixed":false,"timer":null,"costTimer":null},{"x":421.83,"y":227.91,"isFixed":false,"timer":null,"costTimer":null},{"x":443.13,"y":228.02,"isFixed":false,"timer":0,"costTimer":0},{"x":464.43,"y":228.12,"isFixed":false,"timer":0.7,"costTimer":0.7},{"x":485.73,"y":228.23,"isFixed":false,"timer":null,"costTimer":null},{"x":507.03,"y":228.33,"isFixed":false,"timer":null,"costTimer":null},{"x":528.33,"y":228.44,"isFixed":false,"timer":null,"costTimer":null},{"x":549.63,"y":228.54,"isFixed":true,"timer":null,"costTimer":null}],"fromLevel":true}]},{"budget":80,"balls":[{"x":221.93,"y":669.57,"fromLevel":true}],"targets":[{"x":1401.47,"y":427.81,"radius":36,"fromLevel":true}],"platforms":[{"type":"bouncy","x":203.04,"y":722.46,"length":70.96,"angle":2.04,"thickness":10,"bounce":1.2,"tension":2,"isFixedStart":true,"isFixedEnd":true,"timerStart":0.2,"timerEnd":null,"timerStartCost":0.2,"timerEndCost":null,"costLength":70.96,"fromLevel":true}]},{"budget":250,"balls":[{"x":516.6,"y":186.29,"fromLevel":true},{"x":672.5,"y":186.29,"fromLevel":true}],"targets":[{"x":278.78,"y":554.91,"radius":36,"fromLevel":true},{"x":910.32,"y":553.59,"radius":36,"fromLevel":true}],"platforms":[{"type":"bouncy","x":536.42,"y":214.04,"length":50.21,"angle":3.14,"thickness":10,"bounce":0,"tension":0,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":0.6,"timerStartCost":null,"timerEndCost":0.6,"costLength":50.21,"fromLevel":true},{"type":"bouncy","x":648.72,"y":215.36,"length":50.21,"angle":0,"thickness":10,"bounce":0,"tension":0,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":0.6,"timerStartCost":null,"timerEndCost":0.6,"costLength":50.21,"fromLevel":true}]},{"budget":100,"balls":[{"x":558.88,"y":163.83,"fromLevel":true}],"targets":[{"x":914.29,"y":511.31,"radius":36,"fromLevel":true}],"platforms":[{"type":"bouncy","x":523.2,"y":786.13,"length":50.21,"angle":0,"thickness":10,"bounce":0,"tension":0,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":null,"timerStartCost":null,"timerEndCost":null,"costLength":50.21,"fromLevel":true},{"type":"bouncy","x":546.99,"y":827.09,"length":71.35,"angle":-1.57,"thickness":10,"bounce":1.2,"tension":2,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":0.4,"timerStartCost":null,"timerEndCost":0.4,"costLength":71.35,"fromLevel":true},{"type":"bouncy","x":858.79,"y":475.64,"length":79.27,"angle":1.57,"thickness":10,"bounce":1.2,"tension":0,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":null,"timerStartCost":null,"timerEndCost":null,"costLength":79.27,"fromLevel":true}]},{"budget":400,"balls":[{"x":1232.7,"y":701.57,"fromLevel":true}],"targets":[{"x":138.73,"y":134.76,"radius":36,"fromLevel":true}],"platforms":[]},{"budget":500,"balls":[{"x":639.47,"y":99.09,"fromLevel":true},{"x":731.96,"y":99.09,"fromLevel":true}],"targets":[{"x":685.71,"y":227.25,"radius":36,"fromLevel":true},{"x":689.68,"y":734.6,"radius":36,"fromLevel":true}],"platforms":[{"type":"bouncy","x":675.14,"y":142.69,"length":139.29,"angle":2.39,"thickness":10,"bounce":0,"tension":0,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":null,"timerStartCost":null,"timerEndCost":null,"costLength":139.29,"fromLevel":true},{"type":"bouncy","x":801.98,"y":239.14,"length":140.27,"angle":-2.39,"thickness":10,"bounce":0,"tension":0,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":null,"timerStartCost":null,"timerEndCost":null,"costLength":140.27,"fromLevel":true}]},{"budget":250,"balls":[{"x":583.15,"y":242.57,"fromLevel":true},{"x":583.15,"y":291.58,"fromLevel":true}],"targets":[{"x":1250.84,"y":687.29,"radius":36,"fromLevel":true}],"platforms":[{"type":"bouncy","x":535.38,"y":204.59,"length":165.8,"angle":1.76,"thickness":10,"bounce":1.2,"tension":0,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":null,"timerStartCost":null,"timerEndCost":null,"costLength":165.8,"fromLevel":true},{"type":"bouncy","x":638.28,"y":200.92,"length":171.39,"angle":1.41,"thickness":10,"bounce":1.2,"tension":0,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":null,"timerStartCost":null,"timerEndCost":null,"costLength":171.39,"fromLevel":true},{"type":"bouncy","x":504.75,"y":367.53,"length":160.99,"angle":0.02,"thickness":10,"bounce":1.2,"tension":0,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":null,"timerStartCost":null,"timerEndCost":null,"costLength":160.99,"fromLevel":true}]},{"budget":400,"balls":[{"x":384.69,"y":563.55,"fromLevel":true}],"targets":[{"x":938.44,"y":392.04,"radius":36,"fromLevel":true}],"platforms":[{"type":"bouncy","x":334.45,"y":596.63,"length":98.01,"angle":0,"thickness":10,"bounce":0,"tension":0,"isFixedStart":false,"isFixedEnd":false,"timerStart":null,"timerEnd":null,"timerStartCost":null,"timerEndCost":null,"costLength":98.01,"fromLevel":true},{"type":"bouncy","x":461.87,"y":643.67,"length":162.79,"angle":3.14,"thickness":10,"bounce":0,"tension":0,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":null,"timerStartCost":null,"timerEndCost":null,"costLength":162.79,"fromLevel":true},{"type":"bouncy","x":317.3,"y":198.47,"length":140.89,"angle":0,"thickness":10,"bounce":0,"tension":0,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":null,"timerStartCost":null,"timerEndCost":null,"costLength":140.89,"fromLevel":true}]},{"budget":600,"balls":[{"x":89.43,"y":802.45,"fromLevel":true}],"targets":[{"x":1161.41,"y":200.92,"radius":36,"fromLevel":true}],"platforms":[]},{"budget":600,"balls":[{"x":381.01,"y":209.49,"fromLevel":true},{"x":733.84,"y":439.82,"fromLevel":true},{"x":1018.07,"y":208.27,"fromLevel":true}],"targets":[{"x":139.66,"y":706.89,"radius":36,"fromLevel":true},{"x":1308.42,"y":757.12,"radius":36,"fromLevel":true},{"x":730.17,"y":312.4,"radius":36,"fromLevel":true}],"platforms":[]},{"budget":500,"balls":[{"x":536.6,"y":269.53,"fromLevel":true}],"targets":[{"x":803.68,"y":395.71,"radius":36,"fromLevel":true}],"platforms":[{"type":"bouncy","x":583.15,"y":205.82,"length":300,"angle":1.57,"thickness":10,"bounce":0,"tension":0,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":null,"timerStartCost":null,"timerEndCost":null,"costLength":300,"fromLevel":true},{"type":"bouncy","x":586.83,"y":781.62,"length":275.83,"angle":-1.58,"thickness":10,"bounce":0,"tension":0,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":null,"timerStartCost":null,"timerEndCost":null,"costLength":275.83,"fromLevel":true},{"type":"bouncy","x":398.16,"y":204.59,"length":185,"angle":0.01,"thickness":10,"bounce":0,"tension":0,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":null,"timerStartCost":null,"timerEndCost":null,"costLength":185,"fromLevel":true}]},{"budget":13000,"balls":[{"x":508.63,"y":248.14,"fromLevel":true},{"x":510.88,"y":331.23,"fromLevel":true},{"x":508.63,"y":396.35,"fromLevel":true},{"x":509.75,"y":463.72,"fromLevel":true},{"x":509.75,"y":524.35,"fromLevel":true},{"x":631.02,"y":249.26,"fromLevel":true},{"x":687.16,"y":275.09,"fromLevel":true},{"x":724.21,"y":313.26,"fromLevel":true},{"x":696.14,"y":359.3,"fromLevel":true},{"x":656.84,"y":389.61,"fromLevel":true},{"x":696.14,"y":416.56,"fromLevel":true},{"x":724.21,"y":467.09,"fromLevel":true},{"x":688.28,"y":514.25,"fromLevel":true},{"x":629.89,"y":524.35,"fromLevel":true},{"x":903.86,"y":253.75,"fromLevel":true},{"x":909.47,"y":315.51,"fromLevel":true},{"x":918.46,"y":385.12,"fromLevel":true},{"x":916.21,"y":445.75,"fromLevel":true},{"x":917.33,"y":520.98,"fromLevel":true},{"x":976.84,"y":375.02,"fromLevel":true},{"x":1013.89,"y":325.61,"fromLevel":true},{"x":1038.6,"y":260.49,"fromLevel":true},{"x":998.18,"y":430.04,"fromLevel":true},{"x":1064.42,"y":523.23,"fromLevel":true},{"x":1030.74,"y":477.19,"fromLevel":true}],"targets":[{"x":138.11,"y":525.47,"radius":36,"fromLevel":true},{"x":444.63,"y":707.37,"radius":36,"fromLevel":true},{"x":781.47,"y":717.47,"radius":36,"fromLevel":true},{"x":1107.09,"y":710.74,"radius":36,"fromLevel":true},{"x":1302.46,"y":515.37,"radius":36,"fromLevel":true}],"platforms":[]}]
+var LEVELS=[{"budget":150,"balls":[{"x":231.37,"y":259.71,"fromLevel":true}],"targets":[{"x":696.96,"y":704.51,"radius":36,"fromLevel":true}],"platforms":[]},{"budget":50,"balls":[{"x":454.25,"y":175.66,"fromLevel":true}],"targets":[{"x":459.92,"y":526.02,"radius":36,"fromLevel":true}],"platforms":[{"type":"bridge","segmentLength":21.3,"costLength":191.71,"points":[{"x":357.92,"y":227.6,"isFixed":true,"timer":null,"costTimer":null},{"x":379.22,"y":227.7,"isFixed":false,"timer":null,"costTimer":null},{"x":400.52,"y":227.81,"isFixed":false,"timer":null,"costTimer":null},{"x":421.83,"y":227.91,"isFixed":false,"timer":null,"costTimer":null},{"x":443.13,"y":228.02,"isFixed":false,"timer":0,"costTimer":0},{"x":464.43,"y":228.12,"isFixed":false,"timer":0.7,"costTimer":0.7},{"x":485.73,"y":228.23,"isFixed":false,"timer":null,"costTimer":null},{"x":507.03,"y":228.33,"isFixed":false,"timer":null,"costTimer":null},{"x":528.33,"y":228.44,"isFixed":false,"timer":null,"costTimer":null},{"x":549.63,"y":228.54,"isFixed":true,"timer":null,"costTimer":null}],"fromLevel":true}]},{"budget":80,"balls":[{"x":221.93,"y":669.57,"fromLevel":true}],"targets":[{"x":1401.47,"y":427.81,"radius":36,"fromLevel":true}],"platforms":[{"type":"bouncy","x":203.04,"y":722.46,"length":70.96,"angle":2.04,"thickness":10,"bounce":1.2,"tension":2,"isFixedStart":true,"isFixedEnd":true,"timerStart":0.2,"timerEnd":null,"timerStartCost":0.2,"timerEndCost":null,"costLength":70.96,"fromLevel":true}]},{"budget":250,"balls":[{"x":516.6,"y":186.29,"fromLevel":true},{"x":672.5,"y":186.29,"fromLevel":true}],"targets":[{"x":278.78,"y":554.91,"radius":36,"fromLevel":true},{"x":910.32,"y":553.59,"radius":36,"fromLevel":true}],"platforms":[{"type":"bouncy","x":536.42,"y":214.04,"length":50.21,"angle":3.14,"thickness":10,"bounce":0,"tension":0,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":0.6,"timerStartCost":null,"timerEndCost":0.6,"costLength":50.21,"fromLevel":true},{"type":"bouncy","x":648.72,"y":215.36,"length":50.21,"angle":0,"thickness":10,"bounce":0,"tension":0,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":0.6,"timerStartCost":null,"timerEndCost":0.6,"costLength":50.21,"fromLevel":true}]},{"budget":100,"balls":[{"x":558.88,"y":163.83,"fromLevel":true}],"targets":[{"x":914.29,"y":511.31,"radius":36,"fromLevel":true}],"platforms":[{"type":"bouncy","x":523.2,"y":786.13,"length":50.21,"angle":0,"thickness":10,"bounce":0,"tension":0,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":null,"timerStartCost":null,"timerEndCost":null,"costLength":50.21,"fromLevel":true},{"type":"bouncy","x":546.99,"y":827.09,"length":71.35,"angle":-1.57,"thickness":10,"bounce":1.2,"tension":2,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":0.4,"timerStartCost":null,"timerEndCost":0.4,"costLength":71.35,"fromLevel":true},{"type":"bouncy","x":858.79,"y":475.64,"length":79.27,"angle":1.57,"thickness":10,"bounce":1.2,"tension":0,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":null,"timerStartCost":null,"timerEndCost":null,"costLength":79.27,"fromLevel":true}]},{"budget":400,"balls":[{"x":1232.7,"y":701.57,"fromLevel":true}],"targets":[{"x":138.73,"y":134.76,"radius":36,"fromLevel":true}],"platforms":[]},{"budget":500,"balls":[{"x":639.47,"y":99.09,"fromLevel":true},{"x":731.96,"y":99.09,"fromLevel":true}],"targets":[{"x":685.71,"y":227.25,"radius":36,"fromLevel":true},{"x":689.68,"y":734.6,"radius":36,"fromLevel":true}],"platforms":[{"type":"bouncy","x":675.14,"y":142.69,"length":139.29,"angle":2.39,"thickness":10,"bounce":0,"tension":0,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":null,"timerStartCost":null,"timerEndCost":null,"costLength":139.29,"fromLevel":true},{"type":"bouncy","x":801.98,"y":239.14,"length":140.27,"angle":-2.39,"thickness":10,"bounce":0,"tension":0,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":null,"timerStartCost":null,"timerEndCost":null,"costLength":140.27,"fromLevel":true}]},{"budget":250,"balls":[{"x":583.15,"y":242.57,"fromLevel":true},{"x":583.15,"y":291.58,"fromLevel":true}],"targets":[{"x":1250.84,"y":687.29,"radius":36,"fromLevel":true}],"platforms":[{"type":"bouncy","x":535.38,"y":204.59,"length":165.8,"angle":1.76,"thickness":10,"bounce":1.2,"tension":0,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":null,"timerStartCost":null,"timerEndCost":null,"costLength":165.8,"fromLevel":true},{"type":"bouncy","x":638.28,"y":200.92,"length":171.39,"angle":1.41,"thickness":10,"bounce":1.2,"tension":0,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":null,"timerStartCost":null,"timerEndCost":null,"costLength":171.39,"fromLevel":true},{"type":"bouncy","x":504.75,"y":367.53,"length":160.99,"angle":0.02,"thickness":10,"bounce":1.2,"tension":0,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":null,"timerStartCost":null,"timerEndCost":null,"costLength":160.99,"fromLevel":true}]},{"budget":400,"balls":[{"x":384.69,"y":563.55,"fromLevel":true}],"targets":[{"x":938.44,"y":392.04,"radius":36,"fromLevel":true}],"platforms":[{"type":"bouncy","x":334.45,"y":596.63,"length":98.01,"angle":0,"thickness":10,"bounce":0,"tension":0,"isFixedStart":false,"isFixedEnd":false,"timerStart":null,"timerEnd":null,"timerStartCost":null,"timerEndCost":null,"costLength":98.01,"fromLevel":true},{"type":"bouncy","x":461.87,"y":643.67,"length":162.79,"angle":3.14,"thickness":10,"bounce":0,"tension":0,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":null,"timerStartCost":null,"timerEndCost":null,"costLength":162.79,"fromLevel":true},{"type":"bouncy","x":317.3,"y":198.47,"length":140.89,"angle":0,"thickness":10,"bounce":0,"tension":0,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":null,"timerStartCost":null,"timerEndCost":null,"costLength":140.89,"fromLevel":true}]},{"budget":600,"balls":[{"x":89.43,"y":802.45,"fromLevel":true}],"targets":[{"x":1161.41,"y":200.92,"radius":36,"fromLevel":true}],"platforms":[]},{"budget":600,"balls":[{"x":381.01,"y":209.49,"fromLevel":true},{"x":733.84,"y":439.82,"fromLevel":true},{"x":1018.07,"y":208.27,"fromLevel":true}],"targets":[{"x":139.66,"y":706.89,"radius":36,"fromLevel":true},{"x":1308.42,"y":757.12,"radius":36,"fromLevel":true},{"x":730.17,"y":312.4,"radius":36,"fromLevel":true}],"platforms":[]},{"budget":500,"balls":[{"x":536.6,"y":269.53,"fromLevel":true}],"targets":[{"x":803.68,"y":395.71,"radius":36,"fromLevel":true}],"platforms":[{"type":"bouncy","x":398.16,"y":204.59,"length":185,"angle":0.01,"thickness":10,"bounce":0,"tension":0,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":null,"timerStartCost":null,"timerEndCost":null,"costLength":185,"fromLevel":true},{"type":"bouncy","x":583.63,"y":221.93,"length":300,"angle":1.57,"thickness":10,"bounce":0,"tension":0,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":null,"timerStartCost":null,"timerEndCost":null,"costLength":300,"fromLevel":true},{"type":"bouncy","x":584.58,"y":536.42,"length":257.82,"angle":1.56,"thickness":10,"bounce":0,"tension":0,"isFixedStart":true,"isFixedEnd":true,"timerStart":null,"timerEnd":null,"timerStartCost":null,"timerEndCost":null,"costLength":257.82,"fromLevel":true}]},{"budget":13000,"balls":[{"x":508.63,"y":248.14,"fromLevel":true},{"x":510.88,"y":331.23,"fromLevel":true},{"x":508.63,"y":396.35,"fromLevel":true},{"x":509.75,"y":463.72,"fromLevel":true},{"x":509.75,"y":524.35,"fromLevel":true},{"x":631.02,"y":249.26,"fromLevel":true},{"x":687.16,"y":275.09,"fromLevel":true},{"x":724.21,"y":313.26,"fromLevel":true},{"x":696.14,"y":359.3,"fromLevel":true},{"x":656.84,"y":389.61,"fromLevel":true},{"x":696.14,"y":416.56,"fromLevel":true},{"x":724.21,"y":467.09,"fromLevel":true},{"x":688.28,"y":514.25,"fromLevel":true},{"x":629.89,"y":524.35,"fromLevel":true},{"x":903.86,"y":253.75,"fromLevel":true},{"x":909.47,"y":315.51,"fromLevel":true},{"x":918.46,"y":385.12,"fromLevel":true},{"x":916.21,"y":445.75,"fromLevel":true},{"x":917.33,"y":520.98,"fromLevel":true},{"x":976.84,"y":375.02,"fromLevel":true},{"x":1013.89,"y":325.61,"fromLevel":true},{"x":1038.6,"y":260.49,"fromLevel":true},{"x":998.18,"y":430.04,"fromLevel":true},{"x":1064.42,"y":523.23,"fromLevel":true},{"x":1030.74,"y":477.19,"fromLevel":true}],"targets":[{"x":138.11,"y":525.47,"radius":36,"fromLevel":true},{"x":444.63,"y":707.37,"radius":36,"fromLevel":true},{"x":781.47,"y":717.47,"radius":36,"fromLevel":true},{"x":1107.09,"y":710.74,"radius":36,"fromLevel":true},{"x":1302.46,"y":515.37,"radius":36,"fromLevel":true}],"platforms":[]}];
 
 function seedLevelsIfNeeded(){
     const levels = (globalThis.LEVELS || globalThis.window?.LEVELS);
@@ -879,31 +872,47 @@ function refreshLevelLocks(){
     ctx.lineWidth = 2; ctx.strokeStyle = '#2e7bdc'; ctx.setLineDash([6,6]); ctx.stroke(); ctx.setLineDash([]);
   }
 
-function drawWinOverlay(){
-  if (!levelCompleted) return;
+  function drawWinOverlay(){
+    if (!levelCompleted) return;
 
-  resetTransform();
-  ctx.save();
-  ctx.fillStyle = 'rgba(0,0,0,0.4)';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+    resetTransform();
 
-  const headline = overBudgetOnWin ? 'OVER BUDGET' : 'LEVEL BEATEN!';
-  const sub = overBudgetOnWin
-    ? 'Press Stop to edit and try again'
-    : 'Press Stop to reset / edit';
+    const headline = overBudgetOnWin ? 'OVER BUDGET' : 'COMPLETED!';
+    const sub = overBudgetOnWin ? 'Press Stop to edit and try again' : 'Press Stop to reset / edit / level select';
 
-  ctx.fillStyle = '#fff';
-  ctx.font = 'bold 48px Arial';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(headline, canvas.width/2, canvas.height/2);
+    // Build scoreboard lines from localStorage
+    const r = JSON.parse(localStorage.getItem('rc')||'{}');
+    const lines = ['SCOREBOARD'];
+    for(let i=1;i<=MAX_LEVELS;i++){
+      lines.push(`Level ${i}: `+(r[i]!=null?`£${r[i]}`:'Incomplete'));
+    }
 
-  ctx.font = '20px Arial';
-  ctx.fillText(sub, canvas.width/2, canvas.height/2 + 48);
-  ctx.restore();
+    const cx = canvas.width/2;
+    let y = canvas.height/4;
 
-  setWorldTransform();
-}
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    ctx.font = 'bold 48px Arial';
+    ctx.fillText(headline, cx, y);
+
+    ctx.font = '20px Arial';
+    y += 48;
+    ctx.fillText(sub, cx, y);
+
+    // centered scoreboard under the headline/sub
+    y += 30;
+    ctx.font = '16px system-ui, Arial';
+    for (const line of lines){ y += 22; ctx.fillText(line, cx, y); }
+
+    ctx.restore();
+    setWorldTransform();
+  }
 
 
   // ==== Physics / updates ====
@@ -1034,19 +1043,6 @@ function resetTargetTimers(){
   }
 }
 
-let recs; // records div
-function renderRecs(){
-  const r=JSON.parse(localStorage.getItem('rc')||'{}');
-  let s='';
-  for(let i=1;i<=MAX_LEVELS;i++){
-    s+=`Level ${i}: `+(r[i]!=null?`Completed in £${r[i]}`:'Not complete')+'<br>';
-  }
-  (recs||(recs=document.getElementById('recs')||(()=>{
-    const d=document.createElement('div');d.id='recs';
-    d.style.cssText='position:absolute;right:10px;top:60px;background:#000a;color:#fff;padding:8px 10px;border-radius:8px;font:12px system-ui;max-width:240px';
-    d.hidden=1;document.body.appendChild(d);return d})())).innerHTML=s;
-}
-
 function updateTargetsAndWinCheck(){
   if (targets.length === 0) return;
 
@@ -1087,11 +1083,8 @@ function updateTargetsAndWinCheck(){
     }
 
     refreshLevelLocks?.();
-     if (window.recs && !recs.hidden) renderRecs();
   }
 }
-
-
 
   // ==== Ball vs platform collisions ====
   function platformCollision(ball, p){
@@ -1373,9 +1366,9 @@ function updateTargetsAndWinCheck(){
   const over = levelBudget > 0 && total > levelBudget;
 
   if (levelBudget > 0) {
-    totalCostEl.textContent = `Total: £${total} / £${levelBudget}`;
+    totalCostEl.textContent = `Budget: £${total} / £${levelBudget}`;
   } else {
-    totalCostEl.textContent = `Total: £${total}`;
+    totalCostEl.textContent = `Budget: £${total}`;
   }
 
   totalCostEl.classList.toggle('over', over);
@@ -1469,27 +1462,25 @@ function updateTargetsAndWinCheck(){
   window.addEventListener('resize', ()=>{ resizeCanvas(); });
 
   // Optional: export all levels
-  function exportAllLevels(){
-    const all = [];
-    for (let i=1; i<=13; i++){
-      const raw = localStorage.getItem(`physicsLevel_${i}`);
-      if (raw){
-        try { all.push(JSON.parse(raw)); }
-        catch(e){ console.warn(`Level ${i} JSON parse failed`, e); all.push(null); }
-      } else {
-        all.push(null);
-      }
-    }
-
-    // ⬇️ Minimal-size JS: round numbers and omit pretty-print whitespace
-    const output = "window.LEVELS=" +
-      JSON.stringify(all, (k,v)=>typeof v==='number' ? +v.toFixed(2) : v) +
-      ";";
-
-    console.log(output);
-  }
-
-
+  // function exportAllLevels(){
+  //   const all = [];
+  //   for (let i=1; i<=13; i++){
+  //     const raw = localStorage.getItem(`physicsLevel_${i}`);
+  //     if (raw){
+  //       try { all.push(JSON.parse(raw)); }
+  //       catch(e){ console.warn(`Level ${i} JSON parse failed`, e); all.push(null); }
+  //     } else {
+  //       all.push(null);
+  //     }
+  //   }
+  //
+  //   // ⬇️ Minimal-size JS: round numbers and omit pretty-print whitespace
+  //   const output = "window.LEVELS=" +
+  //     JSON.stringify(all, (k,v)=>typeof v==='number' ? +v.toFixed(2) : v) +
+  //     ";";
+  //
+  //   console.log(output);
+  // }
 
   function drawBackdrop(){
     // --- draw UI/backdrop in SCREEN space ---
