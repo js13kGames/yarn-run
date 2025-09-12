@@ -22,7 +22,6 @@
       <button id="deleteButton">Delete</button>
       <button id="targetButton">Target</button>
       <button id="playBtn">Play</button>
-      <button id="stopBtn" disabled>Stop</button>
       <button id="clearBtn">Clear</button>
       <select id="levelSelect" class="pill">
         <option value="1">Level 1</option><option value="2">Level 2</option><option value="3">Level 3</option>
@@ -191,7 +190,6 @@ window.addEventListener('keydown', (e) => {
   const loadBtn = document.getElementById('loadBtn');
   const clearBtn = document.getElementById('clearBtn');
   const playBtn = document.getElementById('playBtn');
-  const stopBtn = document.getElementById('stopBtn');
   const totalCostEl = document.getElementById('totalCost');
   const budgetInput = document.getElementById('budgetInput');
   const budgetlbl = document.getElementById('budgetlbl');
@@ -287,8 +285,20 @@ function seedLevelsIfNeeded(){
   bounceSlider.oninput = ()=>{ bounceVal.textContent = Number(bounceSlider.value).toFixed(2); };
   tensionSlider.oninput = ()=>{ tensionVal.textContent = Number(tensionSlider.value).toFixed(1); };
   timerSlider.oninput  = ()=>{ timerSeconds = Number(timerSlider.value); timerVal.textContent = timerSeconds.toFixed(1) + 's'; };
-	playBtn.onclick = () => { if (isPlaying) return; saveLevel(currentLevel); setPlayingState(true); levelCompleted = false; overBudgetOnWin = false; resetTargetTimers?.(); };
-	stopBtn.onclick = () => { if (!isPlaying) return; loadLevel(currentLevel); setPlayingState(false); updateTotalCost(); };
+
+  playBtn.onclick = () => {
+    if (isPlaying) {
+      loadLevel(currentLevel);
+      setPlayingState(false);
+      updateTotalCost();
+    } else {
+      saveLevel(currentLevel);
+      setPlayingState(true);
+      levelCompleted = false;
+      overBudgetOnWin = false;
+      resetTargetTimers?.();
+    }
+  };
   levelSelect.addEventListener('change', () => { if (isPlaying) return; currentLevel = Number(levelSelect.value) || 1; loadLevel(currentLevel); setPlayingState(false); updateTotalCost?.(); });
 
   function updateAdminUI(){
@@ -380,11 +390,11 @@ function refreshLevelLocks(){
 }
 
   function setPlayingState(on){
+  playBtn.textContent = on ? 'Stop' : 'Play';
 	levelCompleted = false;
 	overBudgetOnWin = false;
 	if (budgetInput) budgetInput.disabled = on;
     isPlaying = on; timersRunning = on;
-    playBtn.disabled = on;  stopBtn.disabled = !on;
     [bridgeBtn,bouncyBtn,targetBtn,timerBtn,deleteBtn,saveBtn,loadBtn,clearBtn,levelSelect,adminToggle].forEach(b=>{ if (b) b.disabled = on; });
     [bounceSlider,tensionSlider,timerSlider].forEach(s=>{ if (s) s.disabled = on; });
     if (on){ bouncyRow.style.display = 'none'; timerRow.style.display = 'none'; highlightSelectedButton('playBtn'); }
