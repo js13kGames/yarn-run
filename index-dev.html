@@ -315,6 +315,20 @@ function seedLevelsIfNeeded(){
     }
   }
 
+  let tip;
+  function showTip(txt,sx,sy){
+    if(!tip){
+      tip=document.createElement('div');
+      tip.style.cssText='position:fixed;pointer-events:none;z-index:9999;background:rgba(0,0,0,.8);color:#fff;padding:4px 6px;border-radius:4px;font:11px system-ui;white-space:nowrap;transform:translate(-50%,-120%)';
+      document.body.appendChild(tip);
+    }
+    tip.textContent=txt;
+    tip.style.left=sx+'px';
+    tip.style.top=sy+'px';
+    tip.hidden=false;
+  }
+  function hideTip(){ if(tip) tip.hidden=true; }
+  canvas.addEventListener('mouseleave', hideTip);
 
 // ===== LEVELS =======
 // ==== Level completion gating ====
@@ -402,7 +416,7 @@ function refreshLevelLocks(){
 
 	if (!on) refreshLevelLocks();
   }
-
+  function worldToScreen(x,y){ return {x:x*view.scale+view.offX, y:y*view.scale+view.offY}; }
   function setType(t){ if (isPlaying) return; selectedPlatformType = t; timerMode=false; deleteMode=false; highlightSelectedButton(t+'Button'); bouncyRow.style.display = (t==='bouncy')?'block':'none'; timerRow.style.display='none'; }
   function toggleTimerMode(){ if (isPlaying) return; deleteMode=false; timerMode=!timerMode; if (timerMode){ highlightSelectedButton('timerButton'); bouncyRow.style.display='none'; timerRow.style.display='block'; } else { highlightSelectedButton(selectedPlatformType+'Button'); timerRow.style.display='none'; bouncyRow.style.display=(selectedPlatformType==='bouncy')?'block':'none'; } }
   function toggleDeleteMode(){ if (isPlaying) return; timerMode=false; deleteMode=!deleteMode; if (deleteMode){ highlightSelectedButton('deleteButton'); bouncyRow.style.display='none'; timerRow.style.display='none'; } else { highlightSelectedButton(selectedPlatformType+'Button'); bouncyRow.style.display=(selectedPlatformType==='bouncy')?'block':'none'; } }
@@ -516,6 +530,29 @@ function refreshLevelLocks(){
   canvas.addEventListener('mousemove', (e)=>{
     const {x:mx, y:my} = screenToWorld(e.clientX, e.clientY);
     mouse.x = mx; mouse.y = my;
+
+    let hovered=false;
+    if(!isPlaying && !timerMode && !deleteMode && !draggedPlatform && !editing.platform){
+      for(const pl of platforms){
+        if(pl.type==='bridge') continue; // only bouncy platforms per your request
+        const sx=pl.x, sy=pl.y;
+        const ex=pl.x+pl.length*Math.cos(pl.angle);
+        const ey=pl.y+pl.length*Math.sin(pl.angle);
+        const r=endpointRadius+4;
+
+        if(Math.hypot(mouse.x-sx,mouse.y-sy)<r){
+          const s=worldToScreen(sx,sy);
+          showTip(`Drag to resize • Click to ${pl.isFixedStart?'unpin':'pin'}`, s.x, s.y);
+          hovered=true; break;
+        }
+        if(Math.hypot(mouse.x-ex,mouse.y-ey)<r){
+          const s=worldToScreen(ex,ey);
+          showTip(`Drag to resize • Click to ${pl.isFixedEnd?'unpin':'pin'}`, s.x, s.y);
+          hovered=true; break;
+        }
+      }
+    }
+    if(!hovered) hideTip();
 
     balls.forEach(b=>{ if (b.isDragging){ b.x = mouse.x; b.y = mouse.y; } });
     if (draggedPlatform){ draggedPlatform.x = mouse.x - mouse.startX; draggedPlatform.y = mouse.y - mouse.startY; }
@@ -1512,11 +1549,11 @@ function updateTargetsAndWinCheck(){
     ctx.clip();
 
     // Light blue wall
-    ctx.fillStyle = '#FCFBE1';
+    ctx.fillStyle = '#C7D5F2';
     ctx.fillRect(vx, vy, vw, vh);
 
     // Fish pattern (pixel-sized, clipped to the viewport so edges match)
-    ctx.fillStyle = '#B9F5AB';
+    ctx.fillStyle = '#A7BEF2';
     const fishSpacingX = 60;
     const fishSpacingY = 40;
     const fishSize = 20;
