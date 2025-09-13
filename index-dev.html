@@ -38,7 +38,7 @@
       <input id="budgetInput" type="number" min="0" step="10" value="0" style="width:90px; margin-left:6px;">
       </label>
       <label class="pill" style="cursor:pointer;">
-        <input type="checkbox" id="adminToggle" checked> Admin
+        <input type="checkbox" id="adminToggle"> Admin
       </label>
     </div>
     <div class="row" id="bouncyRow" style="display:block">
@@ -167,6 +167,19 @@ window.addEventListener('keydown', (e) => {
   let isAdmin = adminToggle ? adminToggle.checked : true;
   if (adminToggle) adminToggle.addEventListener('change', () => { isAdmin = adminToggle.checked; });
 
+  const adminWrap = adminToggle?.closest('label') || adminToggle?.parentElement;
+  function updateAdminToggleVisibility(){
+    if(!adminToggle) return;
+    const unlocked = highestSequentialCompleted() >= MAX_LEVELS; // sandbox unlocked after beating 1..13
+    adminToggle.disabled = !unlocked;
+    if(!unlocked){ adminToggle.checked = false; isAdmin = false; }
+    // Optional: subtle visual hint
+    adminToggle.parentElement.style.opacity = unlocked ? '' : '0.5';
+    adminToggle.parentElement.title = unlocked
+      ? 'Admin tools unlocked (Sandbox available).'
+      : 'Beat all levels to unlock Admin tools.';
+    updateAdminUI?.();
+  }
   // Delta-time globals
   let lastTs = performance.now(), dt = 1/60, scale = 1;
   // Initial ball
@@ -299,7 +312,7 @@ function seedLevelsIfNeeded(){
       resetTargetTimers?.();
     }
   };
-  levelSelect.addEventListener('change', () => { if (isPlaying) return; currentLevel = Number(levelSelect.value) || 1; loadLevel(currentLevel); setPlayingState(false); updateTotalCost?.(); });
+  levelSelect.addEventListener('change', () => { if (isPlaying) return; currentLevel = Number(levelSelect.value) || 1; loadLevel(currentLevel); setPlayingState(false); updateAdminToggleVisibility();; updateTotalCost?.(); });
 
   function updateAdminUI(){
     const adminOrSandbox = isAdmin || (currentLevel === SANDBOX_LEVEL);
@@ -384,7 +397,7 @@ function refreshLevelLocks(){
       loadLevel(currentLevel);
     }
   }
-
+  updateAdminToggleVisibility();
   updateAdminUI();
 }
 
@@ -1505,6 +1518,7 @@ function updateTargetsAndWinCheck(){
   }
 
   loadLevel(currentLevel);
+  updateAdminToggleVisibility();
   animate();
   window.addEventListener('resize', ()=>{ resizeCanvas(); });
 
@@ -1881,6 +1895,8 @@ function emitImpactGeneric(x, y, nx, ny, intensity, kind='auto'){
   emitImpactDust(x, y, nx, ny, intensity*0.8);
   emitImpactSparks(x, y, nx, ny, intensity*0.6);
 }
+
+refreshLevelLocks();
 </script>
 </body>
 </html>
